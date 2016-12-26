@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes" ?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>Api Hook on wadahana&#39;s github pages</title>
+    <link>https://wadahana.github.io/categories/api-hook/index.xml</link>
+    <description>Recent content in Api Hook on wadahana&#39;s github pages</description>
+    <generator>Hugo -- gohugo.io</generator>
+    <language>en-us</language>
+    <atom:link href="/categories/api-hook/index.xml" rel="self" type="application/rss+xml" />
+    
+    <item>
+      <title>Android ELF Hook</title>
+      <link>https://wadahana.github.io/post/android-elf-hook/</link>
+      <pubDate>Sat, 24 Dec 2016 09:39:25 +0800</pubDate>
+      
+      <guid>https://wadahana.github.io/post/android-elf-hook/</guid>
+      <description>首先写一段C代码，用arm-Linux-androideabi-gcc 编译成可执行文件:
+#include &amp;lt;stdio.h&amp;gt; #include &amp;lt;string.h&amp;gt; typedef int (*fn_strlen)(const char *); fn_strlen g_strlen = (fn_strlen)strlen; int main(const int argc, const char * args[]) { const char * helloworld = &amp;quot;hello world!&amp;quot;; int a = g_strlen(helloworld); int b = strlen(helloworld); return 0; }  用arm-linux-androideabi-objdump -D 反汇编出所有的段，然后分析我们感兴趣的几个段:
+ .text 的&amp;lt;main&amp;gt;
+.plt 的 &amp;lt;strlen@plt&amp;gt;
+.got
+.rodata
+.data
+  1. strlen的函数重定位： &amp;lt;main&amp;gt; 函数反汇编的地址 0x384 中，指令 bl 294 对应了C代码中的strlen(helloworld);
+bl 294 的机器码是 eb ff ff ff c2, 其中 高8位 eb 是条件跳转指令，低24位是相对于当前PC的偏移地址offset</description>
+    </item>
+    
+  </channel>
+</rss>
