@@ -15,6 +15,127 @@
       
       <guid>https://wadahana.github.io/2017/09/19/bionic%E7%A0%94%E7%A9%B6%E7%AC%94%E8%AE%B01/</guid>
       <description>&lt;p&gt;研究bionic是去年做symbol hook的时候，粗略看了下linker链接动态库时是如何加载符号表，&lt;/p&gt;
+
+&lt;p&gt;linker从arch/arm/begin.S开始执行，将当前栈顶指针sp作为参数调用__linker_init(void* raw_args)。__linker_init函数负责linker的初始化和重定位工作；在Android 7中的linker_addr是直接从ELF辅助向量中读取AT_BASE。而Android 8则是利用了一个小技巧来计算linker_addr，在__linker_init执行的时侯，是尚未进行重定位的，所以静态变量linktime_addr中的值是其在文件中的偏移量，而代码中对linktime_addr变量的取址操作得到的却是该变量在内存中的地址，两者的差值便是linker加载到内存中的基址。&lt;/p&gt;
+
+&lt;p&gt;Android 7 的__linker_init:&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;extern &amp;quot;C&amp;quot; Elf32_Addr __linker_init(void* raw_args) {
+  KernelArgumentBlock args(raw_args);
+
+  Elf32_Addr linker_addr = args.getauxval(AT_BASE);
+
+  Elf32_Ehdr* elf_hdr = (Elf32_Ehdr*) linker_addr;
+  Elf32_Phdr* phdr = (Elf32_Phdr*)((unsigned char*) linker_addr + elf_hdr-&amp;gt;e_phoff);
+
+  soinfo linker_so(nullptr, nullptr, nullptr, 0, 0);
+  
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;Android 8的__linker_init:&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;extern &amp;quot;C&amp;quot; ElfW(Addr) __linker_init(void* raw_args) {
+  KernelArgumentBlock args(raw_args);
+
+  static uintptr_t linktime_addr = reinterpret_cast&amp;lt;uintptr_t&amp;gt;(&amp;amp;linktime_addr);
+  ElfW(Addr) linker_addr = reinterpret_cast&amp;lt;uintptr_t&amp;gt;(&amp;amp;linktime_addr) - linktime_addr;
+  ElfW(Addr) entry_point = args.getauxval(AT_ENTRY);
+  ElfW(Ehdr)* elf_hdr = reinterpret_cast&amp;lt;ElfW(Ehdr)*&amp;gt;(linker_addr);
+  ElfW(Phdr)* phdr = reinterpret_cast&amp;lt;ElfW(Phdr)*&amp;gt;(linker_addr + elf_hdr-&amp;gt;e_phoff);
+  
+  soinfo linker_so(nullptr, nullptr, nullptr, 0, 0);
+
+  linker_so.base = linker_addr;
+  linker_so.size = phdr_table_get_load_size(phdr, elf_hdr-&amp;gt;e_phnum);
+  linker_so.load_bias = get_elf_exec_load_bias(elf_hdr);
+  linker_so.dynamic = nullptr;
+  linker_so.phdr = phdr;
+  linker_so.phnum = elf_hdr-&amp;gt;e_phnum;
+  linker_so.set_linker_flag();
+
+  if (!linker_so.prelink_image())
+      __linker_cannot_link(args.argv[0]);
+
+  if (!linker_so.link_image(g_empty_list, g_empty_list, nullptr))
+      __linker_cannot_link(args.argv[0]);
+
+#if defined(__i386__)
+  __libc_init_sysinfo(args);
+#endif
+
+  __libc_init_main_thread(args);
+
+  if (!linker_so.protect_relro()) 
+  	  __linker_cannot_link(args.argv[0]);
+
+  __libc_init_globals(args);
+
+  g_argc = args.argc;
+  g_argv = args.argv;
+  g_envp = args.envp;
+  
+  linker_so.call_constructors();
+  
+  if (reinterpret_cast&amp;lt;ElfW(Addr)&amp;gt;(&amp;amp;_start) == entry_point) {
+      async_safe_format_fd(STDOUT_FILENO,
+                     &amp;quot;This is %s, the helper program for dynamic executables.\n&amp;quot;,
+                     args.argv[0]);
+      exit(0);
+  }
+
+  init_linker_info_for_gdb(linker_addr, kLinkerPath);
+  
+  sonext = solist = get_libdl_info(kLinkerPath, linker_so, linker_link_map);
+  g_default_namespace.add_soinfo(solist);
+
+  args.abort_message_ptr = &amp;amp;g_abort_message;
+  ElfW(Addr) start_address = __linker_init_post_relocation(args);
+
+  INFO(&amp;quot;[ Jumping to _start (%p)... ]&amp;quot;, reinterpret_cast&amp;lt;void*&amp;gt;(start_address));
+
+  return start_address;
+  
+    
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;之后创建一个soinfo，填充linker的相关信息，然后先后调用soinfo的prelink_image函数和link_image函数，解析linker的dynamic section，然完成符号表的重定位。&lt;/p&gt;
+
+&lt;p&gt;phdr_table_get_load_size，计算整个linker image的大小，根据program header中PT_LOAD段的最大和最小的地址之差。&lt;/p&gt;
+
+&lt;p&gt;get_elf_exec_load_bias，
+linker启动时的栈底数据结构，填充了命令行参数、环境变量和ELF辅助向量&lt;/p&gt;
+
+&lt;p&gt;__linker_init_post_relocation&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;
+position            content                     size (bytes)  comment
+  ------------------------------------------------------------------------
+stack pointer -&amp;gt;  [ argc = number of args ]     4      
+                  [ argv[0] (pointer) ]         4      
+                  [ argv[1] (pointer) ]         4      
+                  [ argv[..] (pointer) ]        4 * n  
+                  [ argv[n - 1] (pointer) ]     4      
+                  [ argv[n] (pointer) ]         4       	= NULL
+
+                  [ envp[0] (pointer) ]         4     
+                  [ envp[1] (pointer) ]         4      
+                  [ envp[..] (pointer) ]        4      
+                  [ envp[term] (pointer) ]      4           = NULL
+
+                  [ auxv[0] (Elf32_auxv_t) ]    8      
+                  [ auxv[1] (Elf32_auxv_t) ]    8
+                  [ auxv[..] (Elf32_auxv_t) ]   8 
+                  [ auxv[term] (Elf32_auxv_t) ] 8           = AT_NULL vector
+
+                  [ padding ]                   0 - 16     
+
+                  [ argument ASCIIZ strings ]   &amp;gt;= 0   
+                  [ environment ASCIIZ str. ]   &amp;gt;= 0   
+
+(0xbffffffc)      [ end marker ]                4          = NULL 结束
+
+(0xc0000000)       &amp;lt; bottom of stack &amp;gt;          0          (virtual)
+&lt;/code&gt;&lt;/pre&gt;
 </description>
     </item>
     
