@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes" ?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>Api Hook on wadahana&#39;s new blog</title>
+    <link>https://wadahana.github.io/categories/api-hook/index.xml</link>
+    <description>Recent content in Api Hook on wadahana&#39;s new blog</description>
+    <generator>Hugo -- gohugo.io</generator>
+    <language>en-us</language>
+    <atom:link href="https://wadahana.github.io/categories/api-hook/index.xml" rel="self" type="application/rss+xml" />
+    
+    <item>
+      <title>Android ELF Hook</title>
+      <link>https://wadahana.github.io/2016/12/24/android-elf-hook/</link>
+      <pubDate>Sat, 24 Dec 2016 09:39:25 +0800</pubDate>
+      
+      <guid>https://wadahana.github.io/2016/12/24/android-elf-hook/</guid>
+      <description>
+
+&lt;p&gt;首先写一段C代码，用arm-Linux-androideabi-gcc 编译成可执行文件:&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-C&#34;&gt;#include &amp;lt;stdio.h&amp;gt;
+#include &amp;lt;string.h&amp;gt;
+
+typedef int (*fn_strlen)(const char *);
+fn_strlen g_strlen = (fn_strlen)strlen;
+int main(const int argc, const char * args[])
+{
+    const char * helloworld = &amp;quot;hello world!&amp;quot;;
+    int a = g_strlen(helloworld);
+    int b = strlen(helloworld);
+    return 0;
+}
+
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;用arm-linux-androideabi-objdump -D 反汇编出所有的段，然后分析我们感兴趣的几个段:&lt;/p&gt;
+
+&lt;blockquote&gt;
+&lt;p&gt;.text 的&amp;lt;main&amp;gt;&lt;br /&gt;
+.plt 的 &amp;lt;strlen@plt&amp;gt;&lt;br /&gt;
+.got&lt;br /&gt;
+.rodata&lt;br /&gt;
+.data&lt;/p&gt;
+&lt;/blockquote&gt;
+
+&lt;div align=center&gt;
+    &lt;img src=&#34;https://wadahana.github.io/images/android-elf-hook/figure1.png&#34; width=&#34;80%&#34; alt=&#34;figure 1&#34;/&gt;
+    &lt;img src=&#34;https://wadahana.github.io/images/android-elf-hook/figure2.png&#34; width=&#34;80%&#34; alt=&#34;figure 2&#34;/&gt;
+&lt;/div&gt;
+
+&lt;h2 id=&#34;1-strlen的函数重定位&#34;&gt;1. strlen的函数重定位：&lt;/h2&gt;
+
+&lt;p&gt;&amp;lt;main&amp;gt; 函数反汇编的地址 0x384 中，指令 bl 294 对应了C代码中的strlen(helloworld);&lt;br /&gt;
+bl 294 的机器码是 eb ff ff ff c2, 其中 高8位 eb 是条件跳转指令，低24位是相对于当前PC的偏移地址offset&lt;br /&gt;
+offset = (目的地址 - 当前PC) &amp;gt;&amp;gt; 2, 而 PC 等于当前指令的地址 + 8  所以&lt;br /&gt;
+offset = (0x294 - (0x384+0x8)) &amp;gt;&amp;gt; 2 = (-0xF8 &amp;gt;&amp;gt; 2) = -(0x3E)
+-(0x3E) 取24位补码等于 0xFFFFC2&lt;/p&gt;
+
+&lt;p&gt;在&amp;lt;strlen@plt&amp;gt;:地址0x294的位置是三条汇编指令，等价于&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;ip = pc + 0 
+ip = ip + 0x1000
+pc = [ip + 0xd60]
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;也就是将 (0x294 + 0x8) + 0x1000 + 0xd60 = 0x1FFC 指向的内存区的值取出来 赋给PC&lt;/p&gt;
+
+&lt;p&gt;地址0x1FFC, 是在&amp;lt;_GLOABLE_OFFSET_TABLE&amp;gt;中的表项，内容是0x268, &amp;lt;__libc_init@plt-0x14&amp;gt;的地址，初始化成0x268这个直，应该就是为了动态链接函数地址时作lazy load用的。&lt;/p&gt;
+
+&lt;p&gt;再来看在图三rel.plt表中offset为0x1FFC的项也说明了strlen函数对应的offset地址。&lt;/p&gt;
+
+&lt;div align=center&gt;
+    &lt;img src=&#34;https://wadahana.github.io/images/android-elf-hook/figure3.png&#34; width=&#34;80%&#34; alt=&#34;figure 3&#34;/&gt;
+&lt;/div&gt;
+
+&lt;h2 id=&#34;2-g-strlen全局函数变量的重定位&#34;&gt;2. g_strlen全局函数变量的重定位：&lt;/h2&gt;
+
+&lt;p&gt;对应的汇编代码在  &lt;main&gt;:0x368-0x378， 写成伪代码如下：&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;    0x368: r3 = [0x3a0] = 0x1c8c
+    0x36c: r3 = pc + 0x1c8c =  0x36c + 0x08+ 0x1c8c = 0x2000
+    0x370: r3 = [r3] = [0x2000]
+    0x378: call r3 
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;图三.rel.dyn 表中 offset = 0x2000 对应的sym name 为g_strlen.
+图二中最后一行也可以看到对应0x2000 的值是0， 当linker链接后会置为符号strlen的实际地址.&lt;/p&gt;
+
+&lt;h2 id=&#34;3-rel-dyn-与-rel-plt-的区别&#34;&gt;3. .rel.dyn 与 .rel.plt 的区别&lt;/h2&gt;
+
+&lt;p&gt;.rel.dyn和.rel.plt是REL/RELA，它们是Elf32_Rel类型或者Elf64_Rela的结构体数据&lt;br /&gt;
+.rel.dyn节的每个表项对应了除了外部过程调用的符号以外的所有重定位对象，
+.rel.plt节的每个表项对应了所有外部过程调用符号的重定位信息。&lt;/p&gt;
+
+&lt;p&gt;&lt;strong&gt;elf hook 的原理实际上就是通过.rel.dyn节和.rel.plt节的rel/rela项，找到符号对应的地址，例如本文中0x1ffc和0x2000, 并将其替换。&lt;/strong&gt;&lt;/p&gt;
+</description>
+    </item>
+    
+  </channel>
+</rss>

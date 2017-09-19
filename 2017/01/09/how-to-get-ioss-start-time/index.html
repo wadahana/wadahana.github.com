@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en-us">
+  <head>
+    <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="generator" content="Hugo 0.18" />
+
+
+<title>How to get iOS&#39;s start time - wadahana&#39;s new blog</title>
+<meta property="og:title" content="How to get iOS&#39;s start time - wadahana&#39;s new blog">
+
+
+
+  
+
+
+
+
+
+
+<link rel="stylesheet" href="https://wadahana.github.iocss/main.css" media="all">
+<link rel="stylesheet" href="//fonts.googleapis.com/css?family=Merriweather:400|Lato:400,400italic,700">
+
+
+<script src="https://wadahana.github.iojs/highlight.pack.js"></script>
+<link rel="stylesheet" href="https://wadahana.github.iocss/styles/monokai-sublime.css">
+<script>hljs.initHighlightingOnLoad();</script>
+  </head>
+  <body>
+    <div class="wrapper">
+      <header class="header">
+        <nav class="nav">
+  <a href="https://wadahana.github.io" class="nav-logo">
+    <img src="https://wadahana.github.ioimages/logo.png" 
+         width="50" 
+         height="50" 
+         alt="Logo">
+  </a>
+
+  <ul class="nav-links">
+    
+    <li><a href="/about/">About</a></li>
+    
+    <li><a href="http://github.com/wadahana">GitHub</a></li>
+    
+  </ul>
+</nav>
+
+      </header>
+
+
+<main class="content" role="main">
+
+  <article class="article">
+    
+    <span class="article-duration">1 min read</span>
+    
+
+    <h1 class="article-title">How to get iOS&#39;s start time</h1>
+
+    
+    <span class="article-date">January 9, 2017</span>
+    
+
+    <div class="article-content">
+      <p>做一个iOS上的流量监控App，原本通过sysctl读取进程列表，取得kernel_task进程的启动时间作为系统启动时间，如果系统重启就需要把网卡记录的流量全部累加，否则用本次读取的网卡流量数据减去上一次记录的数据认为是这段时间内用户产生的流量。</p>
+
+<p>在iOS9上 sysctl被封了，这段代码就挂了。没办法拿到系统启动时间，就会不停的累加网卡记录的全部流量。</p>
+
+<p><strong>使用sysctl取得kernel_task启动时间</strong></p>
+
+<pre><code>
++ (NSDate *)systemStartTime
+{
+    size_t length = 0;
+    static const int name[] = {CTL_KERN, KERN_PROC, KERN_PROC_ALL, 0};
+    int err = sysctl( (int *) name, (sizeof(name) / sizeof(*name)) - 1, NULL, &amp;length, NULL, 0);
+    if (err == -1)
+    {
+        err = errno;
+    }
+    if (err == 0)
+    {
+        struct kinfo_proc *procBuffer = (struct kinfo_proc *)malloc(length);
+        if(procBuffer == NULL)
+        {
+            return nil;
+        }
+
+        sysctl( (int *) name, (sizeof(name) / sizeof(*name)) - 1, procBuffer, &amp;length, NULL, 0);
+
+        int count = (int)length / sizeof(struct kinfo_proc);
+        for (int i = 0; i &lt; count; ++i)
+        {
+            NSString *procName = [NSString stringWithCString:procBuffer[i].kp_proc.p_comm encoding:NSUTF8StringEncoding];
+            if ([procName isEqualToString:@&quot;kernel_task&quot;])
+            {
+                return [NSDate dateWithTimeIntervalSince1970:procBuffer[i].kp_proc.p_un.__p_starttime.tv_sec];
+            }
+        }
+    }
+
+    return nil;
+}
+
+</code></pre>
+
+<p>使用sysctlbyname取得boottime</p>
+
+<pre><code>+ (NSDate *)systemStartTime {
+    size_t size;
+    sysctlbyname(&quot;kern.boottime&quot;, NULL, &amp;size, NULL, 0);
+    char *boot_time = malloc(size);
+    sysctlbyname(&quot;kern.boottime&quot;, boot_time, &amp;size, NULL, 0);
+    uint32_t timestamp = 0;
+    memcpy(&amp;timestamp, boot_time, sizeof(uint32_t));
+    free(boot_time);
+    NSDate* bootTime = [NSDate dateWithTimeIntervalSince1970:timestamp];
+    NSLog(@&quot;BootTime: %@&quot;, bootTime);
+    return  bootTime;
+}
+
+</code></pre>
+
+<p>这种方式读取boottime也是有问题的，就是用户手动设置系统时间后，bootime会变动成手动设置的那个时刻；另外mach_absolute_time读取出来的tick数和bootime是一致的，猜测boottime其实就是换算mach_absolute_time()的结果。</p>
+
+    </div>
+  </article>
+
+  
+
+</main>
+
+      <footer class="footer">
+        <ul class="footer-links">
+          <li>
+            <a href="https://wadahana.github.io/index.xml" type="application/rss+xml" target="_blank">RSS feed</a>
+          </li>
+          <li>
+            <a href="https://gohugo.io/" class="footer-links-kudos">Made with <img src="https://wadahana.github.ioimages/hugo-logo.png" width="22" height="22"></a>
+          </li>
+        </ul>
+      </footer>
+
+    </div>
+
+    
+  </body>
+</html>
+

@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes" ?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>Bionic on wadahana&#39;s new blog</title>
+    <link>https://wadahana.github.io/tags/bionic/index.xml</link>
+    <description>Recent content in Bionic on wadahana&#39;s new blog</description>
+    <generator>Hugo -- gohugo.io</generator>
+    <language>en-us</language>
+    <atom:link href="https://wadahana.github.io/tags/bionic/index.xml" rel="self" type="application/rss+xml" />
+    
+    <item>
+      <title>bionic研究笔记1</title>
+      <link>https://wadahana.github.io/2017/09/19/bionic%E7%A0%94%E7%A9%B6%E7%AC%94%E8%AE%B01/</link>
+      <pubDate>Tue, 19 Sep 2017 13:59:52 +0800</pubDate>
+      
+      <guid>https://wadahana.github.io/2017/09/19/bionic%E7%A0%94%E7%A9%B6%E7%AC%94%E8%AE%B01/</guid>
+      <description>&lt;p&gt;研究bionic是去年做symbol hook的时候，粗略看了下linker链接动态库时是如何加载符号表，&lt;/p&gt;
+</description>
+    </item>
+    
+  </channel>
+</rss>

@@ -1,0 +1,135 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes" ?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>网络劫持 on wadahana&#39;s new blog</title>
+    <link>https://wadahana.github.io/categories/%E7%BD%91%E7%BB%9C%E5%8A%AB%E6%8C%81/index.xml</link>
+    <description>Recent content in 网络劫持 on wadahana&#39;s new blog</description>
+    <generator>Hugo -- gohugo.io</generator>
+    <language>en-us</language>
+    <atom:link href="https://wadahana.github.io/categories/%E7%BD%91%E7%BB%9C%E5%8A%AB%E6%8C%81/index.xml" rel="self" type="application/rss+xml" />
+    
+    <item>
+      <title>iOS UIWebView PageCache</title>
+      <link>https://wadahana.github.io/2016/12/24/ios-uiwebview-pagecache/</link>
+      <pubDate>Sat, 24 Dec 2016 22:10:45 +0800</pubDate>
+      
+      <guid>https://wadahana.github.io/2016/12/24/ios-uiwebview-pagecache/</guid>
+      <description>&lt;p&gt;UIWebView很弱，前进后退的时候会reload页面，比如浏览&amp;rdquo;今日头条&amp;rdquo;, &amp;ldquo;taobao&amp;rdquo; 或者 &amp;ldquo;新浪微博&amp;rdquo; ，从某个条目的detail页面返回列表时会重新刷新并回到列表页面的头部。&lt;/p&gt;
+
+&lt;p&gt;iOS8之后放出的WKWebView性能体验各方面都不错，也没有这些reload的问题。不过WK的网络请求不能通过NSURLProtocol拦截，WK的网络请求是跨进程，而我们需要劫持流量进行计费，WK注定用不了。研究了下UCWeb，用的也是UIWebView。 最近的研究发现WK的渲染在WebContent进程中，网络请求在WebNetworking进程中；每开一个WKWebView，系统中就会多一个WebContent进程。 WebNetworking进程中网络流量也是可以被NSURLProtocol劫持到，需要通过私有API设置，但是音视频确实是由mediaserverd发出的，没办法劫持。&lt;/p&gt;
+
+&lt;p&gt;&lt;a href=&#34;http://blog.csdn.net/hursing/article/details/8771847&#34;&gt;UIWebView的体系结构&lt;/a&gt;  这篇文章对UIWebView的分析很详尽，虽然不能直接得到解决方案，但是之后的研究得益于阅读这篇文章。
+经过我们对各家APP的测试，发现可以后退而不刷新页面的浏览器有：UCWeb、 QQ浏览器、百度浏览器、 搜狗浏览器；后退会reload的浏览器：Chrome、Opera、猎豹、海豚、极速浏览器、傲云浏览器、手机百度。&lt;/p&gt;
+
+&lt;p&gt;我们走了一些弯路，由于之前研究过UC在播放视频，是用JS劫持video对象和load、play调用，然后传递video url到OC Native，再通过弹出Native的VideoView来播放视频，对于某些只有广告链接或者收费视频或者APP专享的视频，怀疑UC是有一套后端视频URL的聚合系统，可能通过ref url在后端查询真实的视频url来播放。有这个先入为主的惯性思维，一度我们怀疑UC也是用JS解决前进后退不刷新的问题。为了验证这个想法，我们用&lt;a href=&#34;http://blog.jobbole.com/58856/&#34;&gt;MobileSubstrate&lt;/a&gt;注入动态库到UC的进程空间里， &lt;a href=&#34;http://blog.csdn.net/yiyaaixuexi/article/details/9374411&#34;&gt;Method Swizzling&lt;/a&gt;方法替换UIWebView的stringByEvaluatingJavaScriptFromString函数并直接返回，失效UCWeb对UIWebView所有额外的插入的js脚本，发现UCWeb的前进后退还是能够保持原有的dom元素。&lt;/p&gt;
+
+&lt;p&gt;再一条弯路是怀疑使用NSURLCache和NSURLProtocol做了缓存的影响，用同样的方法Hook initWithMemoryCapacity函数强制设置cache大小为0，同时在Hook UIWebView的loadRequest、goBack、goForward都去removeAllCachedResponses，对返回也是没有影响; 同样通过Hook registerClass和setProperty 函数，全部让其失效，验证也不是通过NSURLProtocol作用。&lt;/p&gt;
+
+&lt;p&gt;之所以走这样的弯路其实也是侥幸心理，不愿意花时间和精力去了解WebKit原理和分析WebKit代码。经常我们会由于各方面的压力，希望能够解决某个问题，而又不用花费太多的资源和时间，往往会走上错误的方向。最终我们还是乖乖的去读WebKit代码中关于UIWebView的那一部分。&lt;/p&gt;
+
+&lt;p&gt;UIWebView包含了WebBrowserView，WebBrowserView中还包含了一个无比重要的WebView对象，WebView暴露了很多有用的接口，一个很重要的对象WebBackForwardList；WebBackForwardList实际上是BackForwardList类的跨平台Wrapper类，BackForwardList就是装有HistoryItem的前进后退队列，同样WebHistoryItem也是HistoryItem的Wrapper类， 而实现浏览器前进后退不刷新的就是PageCache对象，PageCache是个单例，当点击一条链接跳转时，当前页面会被加入到gloablePageCache当中，返回时就直接从pageCache中拿出来显示。
+&lt;div align=left style=&#34;padding-top: 6px; padding-bottom: 6px&#34;&gt;
+    &lt;img src=&#34;https://wadahana.github.io/images/ios-uiwebview-pagecache/figure1.png&#34; width=&#34;100%&#34; alt=&#34;figure 1&#34;/&gt;
+&lt;/div&gt;
+WebBackForwardList有pageCacheSize和setPageCacheSize函数，读出UCWeb和我们自己程序的pageCacheSize对比，UC是5，我们的是0，说明了UC开启了pageCache，而我们没有。然而在程序中直接用setPageCacheSize, 再读出来依然还是0，同时劫持UC的setPageCacheSize函数，发现UC根本没有调用[WebBackForwardList setPageCacheSize]。
+&lt;div align=left style=&#34;padding-top: 6px; padding-bottom: 6px&#34;&gt;
+    &lt;img src=&#34;https://wadahana.github.io/images/ios-uiwebview-pagecache/figure2.png&#34; width=&#34;120%&#34; height=&#34;120%&#34; alt=&#34;figure 2&#34;/&gt;
+&lt;/div&gt;
+回到WebView类中，PageCache有一个setMaxSize方法，在WebView的_setCacheModel中被调用，_setCacheModel会根据0-2三种不同的cache模式和实际内存的大小设置各种缓存的大小，其中也包含了PageCache，实测证明在iPhone6 iOS8和iPhone5s iOS9.1上，cacheModel = WebCacheModelPrimaryWebBrowser时，可将pageCacheSize改为3。
+&lt;div align=left style=&#34;padding-top: 16px; padding-bottom: 16px&#34;&gt;
+    &lt;img src=&#34;https://wadahana.github.io/images/ios-uiwebview-pagecache/figure3.png&#34; width=&#34;100%&#34; alt=&#34;figure 3&#34;/&gt;
+&lt;/div&gt;
+最后放上Demo  ： &lt;a href=&#34;https://github.com/wadahana/WebViewDemo&#34;&gt;https://github.com/wadahana/WebViewDemo&lt;/a&gt;&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>Android ELF Hook</title>
+      <link>https://wadahana.github.io/2016/12/24/android-elf-hook/</link>
+      <pubDate>Sat, 24 Dec 2016 09:39:25 +0800</pubDate>
+      
+      <guid>https://wadahana.github.io/2016/12/24/android-elf-hook/</guid>
+      <description>
+
+&lt;p&gt;首先写一段C代码，用arm-Linux-androideabi-gcc 编译成可执行文件:&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-C&#34;&gt;#include &amp;lt;stdio.h&amp;gt;
+#include &amp;lt;string.h&amp;gt;
+
+typedef int (*fn_strlen)(const char *);
+fn_strlen g_strlen = (fn_strlen)strlen;
+int main(const int argc, const char * args[])
+{
+    const char * helloworld = &amp;quot;hello world!&amp;quot;;
+    int a = g_strlen(helloworld);
+    int b = strlen(helloworld);
+    return 0;
+}
+
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;用arm-linux-androideabi-objdump -D 反汇编出所有的段，然后分析我们感兴趣的几个段:&lt;/p&gt;
+
+&lt;blockquote&gt;
+&lt;p&gt;.text 的&amp;lt;main&amp;gt;&lt;br /&gt;
+.plt 的 &amp;lt;strlen@plt&amp;gt;&lt;br /&gt;
+.got&lt;br /&gt;
+.rodata&lt;br /&gt;
+.data&lt;/p&gt;
+&lt;/blockquote&gt;
+
+&lt;div align=center&gt;
+    &lt;img src=&#34;https://wadahana.github.io/images/android-elf-hook/figure1.png&#34; width=&#34;80%&#34; alt=&#34;figure 1&#34;/&gt;
+    &lt;img src=&#34;https://wadahana.github.io/images/android-elf-hook/figure2.png&#34; width=&#34;80%&#34; alt=&#34;figure 2&#34;/&gt;
+&lt;/div&gt;
+
+&lt;h2 id=&#34;1-strlen的函数重定位&#34;&gt;1. strlen的函数重定位：&lt;/h2&gt;
+
+&lt;p&gt;&amp;lt;main&amp;gt; 函数反汇编的地址 0x384 中，指令 bl 294 对应了C代码中的strlen(helloworld);&lt;br /&gt;
+bl 294 的机器码是 eb ff ff ff c2, 其中 高8位 eb 是条件跳转指令，低24位是相对于当前PC的偏移地址offset&lt;br /&gt;
+offset = (目的地址 - 当前PC) &amp;gt;&amp;gt; 2, 而 PC 等于当前指令的地址 + 8  所以&lt;br /&gt;
+offset = (0x294 - (0x384+0x8)) &amp;gt;&amp;gt; 2 = (-0xF8 &amp;gt;&amp;gt; 2) = -(0x3E)
+-(0x3E) 取24位补码等于 0xFFFFC2&lt;/p&gt;
+
+&lt;p&gt;在&amp;lt;strlen@plt&amp;gt;:地址0x294的位置是三条汇编指令，等价于&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;ip = pc + 0 
+ip = ip + 0x1000
+pc = [ip + 0xd60]
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;也就是将 (0x294 + 0x8) + 0x1000 + 0xd60 = 0x1FFC 指向的内存区的值取出来 赋给PC&lt;/p&gt;
+
+&lt;p&gt;地址0x1FFC, 是在&amp;lt;_GLOABLE_OFFSET_TABLE&amp;gt;中的表项，内容是0x268, &amp;lt;__libc_init@plt-0x14&amp;gt;的地址，初始化成0x268这个直，应该就是为了动态链接函数地址时作lazy load用的。&lt;/p&gt;
+
+&lt;p&gt;再来看在图三rel.plt表中offset为0x1FFC的项也说明了strlen函数对应的offset地址。&lt;/p&gt;
+
+&lt;div align=center&gt;
+    &lt;img src=&#34;https://wadahana.github.io/images/android-elf-hook/figure3.png&#34; width=&#34;80%&#34; alt=&#34;figure 3&#34;/&gt;
+&lt;/div&gt;
+
+&lt;h2 id=&#34;2-g-strlen全局函数变量的重定位&#34;&gt;2. g_strlen全局函数变量的重定位：&lt;/h2&gt;
+
+&lt;p&gt;对应的汇编代码在  &lt;main&gt;:0x368-0x378， 写成伪代码如下：&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;    0x368: r3 = [0x3a0] = 0x1c8c
+    0x36c: r3 = pc + 0x1c8c =  0x36c + 0x08+ 0x1c8c = 0x2000
+    0x370: r3 = [r3] = [0x2000]
+    0x378: call r3 
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;图三.rel.dyn 表中 offset = 0x2000 对应的sym name 为g_strlen.
+图二中最后一行也可以看到对应0x2000 的值是0， 当linker链接后会置为符号strlen的实际地址.&lt;/p&gt;
+
+&lt;h2 id=&#34;3-rel-dyn-与-rel-plt-的区别&#34;&gt;3. .rel.dyn 与 .rel.plt 的区别&lt;/h2&gt;
+
+&lt;p&gt;.rel.dyn和.rel.plt是REL/RELA，它们是Elf32_Rel类型或者Elf64_Rela的结构体数据&lt;br /&gt;
+.rel.dyn节的每个表项对应了除了外部过程调用的符号以外的所有重定位对象，
+.rel.plt节的每个表项对应了所有外部过程调用符号的重定位信息。&lt;/p&gt;
+
+&lt;p&gt;&lt;strong&gt;elf hook 的原理实际上就是通过.rel.dyn节和.rel.plt节的rel/rela项，找到符号对应的地址，例如本文中0x1ffc和0x2000, 并将其替换。&lt;/strong&gt;&lt;/p&gt;
+</description>
+    </item>
+    
+  </channel>
+</rss>
