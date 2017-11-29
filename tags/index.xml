@@ -1,0 +1,123 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes" ?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>Tags on wadahana&#39;s new blog</title>
+    <link>https://wadahana.github.io/tags/</link>
+    <description>Recent content in Tags on wadahana&#39;s new blog</description>
+    <generator>Hugo -- gohugo.io</generator>
+    <language>en-us</language>
+    <lastBuildDate>Tue, 19 Sep 2017 13:59:52 +0800</lastBuildDate>
+    
+	<atom:link href="https://wadahana.github.io/tags/index.xml" rel="self" type="application/rss+xml" />
+    
+    
+    <item>
+      <title>Android</title>
+      <link>https://wadahana.github.io/tags/android/</link>
+      <pubDate>Tue, 19 Sep 2017 13:59:52 +0800</pubDate>
+      
+      <guid>https://wadahana.github.io/tags/android/</guid>
+      <description></description>
+    </item>
+    
+    <item>
+      <title>Bionic</title>
+      <link>https://wadahana.github.io/tags/bionic/</link>
+      <pubDate>Tue, 19 Sep 2017 13:59:52 +0800</pubDate>
+      
+      <guid>https://wadahana.github.io/tags/bionic/</guid>
+      <description></description>
+    </item>
+    
+    <item>
+      <title>Elf</title>
+      <link>https://wadahana.github.io/tags/elf/</link>
+      <pubDate>Tue, 19 Sep 2017 13:59:52 +0800</pubDate>
+      
+      <guid>https://wadahana.github.io/tags/elf/</guid>
+      <description></description>
+    </item>
+    
+    <item>
+      <title>Hook</title>
+      <link>https://wadahana.github.io/tags/hook/</link>
+      <pubDate>Sat, 24 Dec 2016 09:39:25 +0800</pubDate>
+      
+      <guid>https://wadahana.github.io/tags/hook/</guid>
+      <description></description>
+    </item>
+    
+    <item>
+      <title>Ios</title>
+      <link>https://wadahana.github.io/tags/ios/</link>
+      <pubDate>Mon, 09 Jan 2017 00:30:36 +0800</pubDate>
+      
+      <guid>https://wadahana.github.io/tags/ios/</guid>
+      <description></description>
+    </item>
+    
+    <item>
+      <title>Pagecache</title>
+      <link>https://wadahana.github.io/tags/pagecache/</link>
+      <pubDate>Sat, 24 Dec 2016 22:10:45 +0800</pubDate>
+      
+      <guid>https://wadahana.github.io/tags/pagecache/</guid>
+      <description></description>
+    </item>
+    
+    <item>
+      <title>Start Time</title>
+      <link>https://wadahana.github.io/tags/start-time/</link>
+      <pubDate>Mon, 09 Jan 2017 00:30:36 +0800</pubDate>
+      
+      <guid>https://wadahana.github.io/tags/start-time/</guid>
+      <description></description>
+    </item>
+    
+    <item>
+      <title>Uiwebview</title>
+      <link>https://wadahana.github.io/tags/uiwebview/</link>
+      <pubDate>Sat, 24 Dec 2016 22:10:45 +0800</pubDate>
+      
+      <guid>https://wadahana.github.io/tags/uiwebview/</guid>
+      <description></description>
+    </item>
+    
+    <item>
+      <title>不刷新</title>
+      <link>https://wadahana.github.io/tags/%E4%B8%8D%E5%88%B7%E6%96%B0/</link>
+      <pubDate>Sat, 24 Dec 2016 22:10:45 +0800</pubDate>
+      
+      <guid>https://wadahana.github.io/tags/%E4%B8%8D%E5%88%B7%E6%96%B0/</guid>
+      <description></description>
+    </item>
+    
+    <item>
+      <title>前进</title>
+      <link>https://wadahana.github.io/tags/%E5%89%8D%E8%BF%9B/</link>
+      <pubDate>Sat, 24 Dec 2016 22:10:45 +0800</pubDate>
+      
+      <guid>https://wadahana.github.io/tags/%E5%89%8D%E8%BF%9B/</guid>
+      <description></description>
+    </item>
+    
+    <item>
+      <title>后退</title>
+      <link>https://wadahana.github.io/tags/%E5%90%8E%E9%80%80/</link>
+      <pubDate>Sat, 24 Dec 2016 22:10:45 +0800</pubDate>
+      
+      <guid>https://wadahana.github.io/tags/%E5%90%8E%E9%80%80/</guid>
+      <description></description>
+    </item>
+    
+    <item>
+      <title>启动时间</title>
+      <link>https://wadahana.github.io/tags/%E5%90%AF%E5%8A%A8%E6%97%B6%E9%97%B4/</link>
+      <pubDate>Mon, 09 Jan 2017 00:30:36 +0800</pubDate>
+      
+      <guid>https://wadahana.github.io/tags/%E5%90%AF%E5%8A%A8%E6%97%B6%E9%97%B4/</guid>
+      <description></description>
+    </item>
+    
+  </channel>
+</rss>

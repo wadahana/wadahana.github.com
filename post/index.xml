@@ -2,142 +2,24 @@
 <rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
   <channel>
     <title>Posts on wadahana&#39;s new blog</title>
-    <link>https://wadahana.github.io/post/index.xml</link>
+    <link>https://wadahana.github.io/post/</link>
     <description>Recent content in Posts on wadahana&#39;s new blog</description>
     <generator>Hugo -- gohugo.io</generator>
     <language>en-us</language>
     <lastBuildDate>Tue, 19 Sep 2017 13:59:52 +0800</lastBuildDate>
-    <atom:link href="https://wadahana.github.io/post/index.xml" rel="self" type="application/rss+xml" />
+    
+	<atom:link href="https://wadahana.github.io/post/index.xml" rel="self" type="application/rss+xml" />
+    
     
     <item>
-      <title>bionic研究笔记1</title>
-      <link>https://wadahana.github.io/2017/09/19/bionic%E7%A0%94%E7%A9%B6%E7%AC%94%E8%AE%B01/</link>
+      <title>bionic linker代码结构分析</title>
+      <link>https://wadahana.github.io/2017/09/19/bionic-linker%E4%BB%A3%E7%A0%81%E7%BB%93%E6%9E%84%E5%88%86%E6%9E%90/</link>
       <pubDate>Tue, 19 Sep 2017 13:59:52 +0800</pubDate>
       
-      <guid>https://wadahana.github.io/2017/09/19/bionic%E7%A0%94%E7%A9%B6%E7%AC%94%E8%AE%B01/</guid>
-      <description>&lt;p&gt;研究bionic是去年做symbol hook的时候，粗略看了下linker链接动态库时是如何加载符号表，&lt;/p&gt;
-
-&lt;p&gt;linker从arch/arm/begin.S开始执行，将当前栈顶指针sp作为参数调用__linker_init(void* raw_args)。__linker_init函数负责linker的初始化和重定位工作；在Android 7中的linker_addr是直接从ELF辅助向量中读取AT_BASE。而Android 8则是利用了一个小技巧来计算linker_addr，在__linker_init执行的时侯，是尚未进行重定位的，所以静态变量linktime_addr中的值是其在文件中的偏移量，而代码中对linktime_addr变量的取址操作得到的却是该变量在内存中的地址，两者的差值便是linker加载到内存中的基址。&lt;/p&gt;
-
-&lt;p&gt;Android 7 的__linker_init:&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;extern &amp;quot;C&amp;quot; Elf32_Addr __linker_init(void* raw_args) {
-  KernelArgumentBlock args(raw_args);
-
-  Elf32_Addr linker_addr = args.getauxval(AT_BASE);
-
-  Elf32_Ehdr* elf_hdr = (Elf32_Ehdr*) linker_addr;
-  Elf32_Phdr* phdr = (Elf32_Phdr*)((unsigned char*) linker_addr + elf_hdr-&amp;gt;e_phoff);
-
-  soinfo linker_so(nullptr, nullptr, nullptr, 0, 0);
-  
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;Android 8的__linker_init:&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;extern &amp;quot;C&amp;quot; ElfW(Addr) __linker_init(void* raw_args) {
-  KernelArgumentBlock args(raw_args);
-
-  static uintptr_t linktime_addr = reinterpret_cast&amp;lt;uintptr_t&amp;gt;(&amp;amp;linktime_addr);
-  ElfW(Addr) linker_addr = reinterpret_cast&amp;lt;uintptr_t&amp;gt;(&amp;amp;linktime_addr) - linktime_addr;
-  ElfW(Addr) entry_point = args.getauxval(AT_ENTRY);
-  ElfW(Ehdr)* elf_hdr = reinterpret_cast&amp;lt;ElfW(Ehdr)*&amp;gt;(linker_addr);
-  ElfW(Phdr)* phdr = reinterpret_cast&amp;lt;ElfW(Phdr)*&amp;gt;(linker_addr + elf_hdr-&amp;gt;e_phoff);
-  
-  soinfo linker_so(nullptr, nullptr, nullptr, 0, 0);
-
-  linker_so.base = linker_addr;
-  linker_so.size = phdr_table_get_load_size(phdr, elf_hdr-&amp;gt;e_phnum);
-  linker_so.load_bias = get_elf_exec_load_bias(elf_hdr);
-  linker_so.dynamic = nullptr;
-  linker_so.phdr = phdr;
-  linker_so.phnum = elf_hdr-&amp;gt;e_phnum;
-  linker_so.set_linker_flag();
-
-  if (!linker_so.prelink_image())
-      __linker_cannot_link(args.argv[0]);
-
-  if (!linker_so.link_image(g_empty_list, g_empty_list, nullptr))
-      __linker_cannot_link(args.argv[0]);
-
-#if defined(__i386__)
-  __libc_init_sysinfo(args);
-#endif
-
-  __libc_init_main_thread(args);
-
-  if (!linker_so.protect_relro()) 
-  	  __linker_cannot_link(args.argv[0]);
-
-  __libc_init_globals(args);
-
-  g_argc = args.argc;
-  g_argv = args.argv;
-  g_envp = args.envp;
-  
-  linker_so.call_constructors();
-  
-  if (reinterpret_cast&amp;lt;ElfW(Addr)&amp;gt;(&amp;amp;_start) == entry_point) {
-      async_safe_format_fd(STDOUT_FILENO,
-                     &amp;quot;This is %s, the helper program for dynamic executables.\n&amp;quot;,
-                     args.argv[0]);
-      exit(0);
-  }
-
-  init_linker_info_for_gdb(linker_addr, kLinkerPath);
-  
-  sonext = solist = get_libdl_info(kLinkerPath, linker_so, linker_link_map);
-  g_default_namespace.add_soinfo(solist);
-
-  args.abort_message_ptr = &amp;amp;g_abort_message;
-  ElfW(Addr) start_address = __linker_init_post_relocation(args);
-
-  INFO(&amp;quot;[ Jumping to _start (%p)... ]&amp;quot;, reinterpret_cast&amp;lt;void*&amp;gt;(start_address));
-
-  return start_address;
-  
-    
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;之后创建一个soinfo，填充linker的相关信息，然后先后调用soinfo的prelink_image函数和link_image函数，解析linker的dynamic section，然完成符号表的重定位。&lt;/p&gt;
-
-&lt;p&gt;phdr_table_get_load_size，计算整个linker image的大小，根据program header中PT_LOAD段的最大和最小的地址之差。&lt;/p&gt;
-
-&lt;p&gt;get_elf_exec_load_bias，
-linker启动时的栈底数据结构，填充了命令行参数、环境变量和ELF辅助向量&lt;/p&gt;
-
-&lt;p&gt;__linker_init_post_relocation&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;
-position            content                     size (bytes)  comment
-  ------------------------------------------------------------------------
-stack pointer -&amp;gt;  [ argc = number of args ]     4      
-                  [ argv[0] (pointer) ]         4      
-                  [ argv[1] (pointer) ]         4      
-                  [ argv[..] (pointer) ]        4 * n  
-                  [ argv[n - 1] (pointer) ]     4      
-                  [ argv[n] (pointer) ]         4       	= NULL
-
-                  [ envp[0] (pointer) ]         4     
-                  [ envp[1] (pointer) ]         4      
-                  [ envp[..] (pointer) ]        4      
-                  [ envp[term] (pointer) ]      4           = NULL
-
-                  [ auxv[0] (Elf32_auxv_t) ]    8      
-                  [ auxv[1] (Elf32_auxv_t) ]    8
-                  [ auxv[..] (Elf32_auxv_t) ]   8 
-                  [ auxv[term] (Elf32_auxv_t) ] 8           = AT_NULL vector
-
-                  [ padding ]                   0 - 16     
-
-                  [ argument ASCIIZ strings ]   &amp;gt;= 0   
-                  [ environment ASCIIZ str. ]   &amp;gt;= 0   
-
-(0xbffffffc)      [ end marker ]                4          = NULL 结束
-
-(0xc0000000)       &amp;lt; bottom of stack &amp;gt;          0          (virtual)
-&lt;/code&gt;&lt;/pre&gt;
-</description>
+      <guid>https://wadahana.github.io/2017/09/19/bionic-linker%E4%BB%A3%E7%A0%81%E7%BB%93%E6%9E%84%E5%88%86%E6%9E%90/</guid>
+      <description>研究bionic是两年前做symbol hook，读了linker加载可执行文件和动态库链接的流程；去年底Android 7发布之后，为了解决dlopen系统目录下动态库的限制，研究了greylist的检查机制。
+下图的calltree以arm架构的启动为例，linker从arch/arm/begin.S开始执行，启动后调用__linker_init函数进行自举，__linker_init只有一个参数，当前栈顶指针sp。在_start之前，linker以及可执行文件，就已经加载到内存当中。
+_start .|-&amp;gt; mov r0, sp .|-&amp;gt; __linker_init . .|-&amp;gt; 初始化KernelArgumentBlock . .|-&amp;gt; 计算linker_addr . .|-&amp;gt; 初始化linker_so . .|-&amp;gt; linker_so.size = phdr_table_get_load_size() . .|-&amp;gt; linker_so.load_bias = get_elf_exec_load_bias() . .|-&amp;gt; soinfo::set_linker_flag() . .|-&amp;gt; soinfo::prelink_image() . .|-&amp;gt; soinfo::link_image() . .|-&amp;gt; __libc_init_main_thread() . .|-&amp;gt; soinfo::protect_relro() . . .|-&amp;gt; phdr_table_protect_gnu_relro() . . . .|-&amp;gt; _phdr_table_set_gnu_relro_prot() . .|-&amp;gt; __libc_init_globals() . .|-&amp;gt; soinfo::call_constructors() . . .|-&amp;gt; get_children().for_each(soinfo &amp;amp;so){so.call_constructors()} . . .|-&amp;gt; call_function(&amp;quot;DT_INIT&amp;quot;, init_func_, get_realpath()); .</description>
     </item>
     
     <item>
@@ -146,67 +28,10 @@ stack pointer -&amp;gt;  [ argc = number of args ]     4
       <pubDate>Mon, 09 Jan 2017 00:30:36 +0800</pubDate>
       
       <guid>https://wadahana.github.io/2017/01/09/how-to-get-ioss-start-time/</guid>
-      <description>&lt;p&gt;做一个iOS上的流量监控App，原本通过sysctl读取进程列表，取得kernel_task进程的启动时间作为系统启动时间，如果系统重启就需要把网卡记录的流量全部累加，否则用本次读取的网卡流量数据减去上一次记录的数据认为是这段时间内用户产生的流量。&lt;/p&gt;
-
-&lt;p&gt;在iOS9上 sysctl被封了，这段代码就挂了。没办法拿到系统启动时间，就会不停的累加网卡记录的全部流量。&lt;/p&gt;
-
-&lt;p&gt;&lt;strong&gt;使用sysctl取得kernel_task启动时间&lt;/strong&gt;&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;
-+ (NSDate *)systemStartTime
-{
-    size_t length = 0;
-    static const int name[] = {CTL_KERN, KERN_PROC, KERN_PROC_ALL, 0};
-    int err = sysctl( (int *) name, (sizeof(name) / sizeof(*name)) - 1, NULL, &amp;amp;length, NULL, 0);
-    if (err == -1)
-    {
-        err = errno;
-    }
-    if (err == 0)
-    {
-        struct kinfo_proc *procBuffer = (struct kinfo_proc *)malloc(length);
-        if(procBuffer == NULL)
-        {
-            return nil;
-        }
-
-        sysctl( (int *) name, (sizeof(name) / sizeof(*name)) - 1, procBuffer, &amp;amp;length, NULL, 0);
-
-        int count = (int)length / sizeof(struct kinfo_proc);
-        for (int i = 0; i &amp;lt; count; ++i)
-        {
-            NSString *procName = [NSString stringWithCString:procBuffer[i].kp_proc.p_comm encoding:NSUTF8StringEncoding];
-            if ([procName isEqualToString:@&amp;quot;kernel_task&amp;quot;])
-            {
-                return [NSDate dateWithTimeIntervalSince1970:procBuffer[i].kp_proc.p_un.__p_starttime.tv_sec];
-            }
-        }
-    }
-
-    return nil;
-}
-
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;使用sysctlbyname取得boottime&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;+ (NSDate *)systemStartTime {
-    size_t size;
-    sysctlbyname(&amp;quot;kern.boottime&amp;quot;, NULL, &amp;amp;size, NULL, 0);
-    char *boot_time = malloc(size);
-    sysctlbyname(&amp;quot;kern.boottime&amp;quot;, boot_time, &amp;amp;size, NULL, 0);
-    uint32_t timestamp = 0;
-    memcpy(&amp;amp;timestamp, boot_time, sizeof(uint32_t));
-    free(boot_time);
-    NSDate* bootTime = [NSDate dateWithTimeIntervalSince1970:timestamp];
-    NSLog(@&amp;quot;BootTime: %@&amp;quot;, bootTime);
-    return  bootTime;
-}
-
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;这种方式读取boottime也是有问题的，就是用户手动设置系统时间后，bootime会变动成手动设置的那个时刻；另外mach_absolute_time读取出来的tick数和bootime是一致的，猜测boottime其实就是换算mach_absolute_time()的结果。&lt;/p&gt;
-</description>
+      <description>做一个iOS上的流量监控App，原本通过sysctl读取进程列表，取得kernel_task进程的启动时间作为系统启动时间，如果系统重启就需要把网卡记录的流量全部累加，否则用本次读取的网卡流量数据减去上一次记录的数据认为是这段时间内用户产生的流量。
+在iOS9上 sysctl被封了，这段代码就挂了。没办法拿到系统启动时间，就会不停的累加网卡记录的全部流量。
+使用sysctl取得kernel_task启动时间
+ + (NSDate *)systemStartTime { size_t length = 0; static const int name[] = {CTL_KERN, KERN_PROC, KERN_PROC_ALL, 0}; int err = sysctl( (int *) name, (sizeof(name) / sizeof(*name)) - 1, NULL, &amp;amp;length, NULL, 0); if (err == -1) { err = errno; } if (err == 0) { struct kinfo_proc *procBuffer = (struct kinfo_proc *)malloc(length); if(procBuffer == NULL) { return nil; } sysctl( (int *) name, (sizeof(name) / sizeof(*name)) - 1, procBuffer, &amp;amp;length, NULL, 0); int count = (int)length / sizeof(struct kinfo_proc); for (int i = 0; i &amp;lt; count; ++i) { NSString *procName = [NSString stringWithCString:procBuffer[i].</description>
     </item>
     
     <item>
@@ -215,33 +40,13 @@ stack pointer -&amp;gt;  [ argc = number of args ]     4
       <pubDate>Sat, 24 Dec 2016 22:10:45 +0800</pubDate>
       
       <guid>https://wadahana.github.io/2016/12/24/ios-uiwebview-pagecache/</guid>
-      <description>&lt;p&gt;UIWebView很弱，前进后退的时候会reload页面，比如浏览&amp;rdquo;今日头条&amp;rdquo;, &amp;ldquo;taobao&amp;rdquo; 或者 &amp;ldquo;新浪微博&amp;rdquo; ，从某个条目的detail页面返回列表时会重新刷新并回到列表页面的头部。&lt;/p&gt;
-
-&lt;p&gt;iOS8之后放出的WKWebView性能体验各方面都不错，也没有这些reload的问题。不过WK的网络请求不能通过NSURLProtocol拦截，WK的网络请求是跨进程，而我们需要劫持流量进行计费，WK注定用不了。研究了下UCWeb，用的也是UIWebView。 最近的研究发现WK的渲染在WebContent进程中，网络请求在WebNetworking进程中；每开一个WKWebView，系统中就会多一个WebContent进程。 WebNetworking进程中网络流量也是可以被NSURLProtocol劫持到，需要通过私有API设置，但是音视频确实是由mediaserverd发出的，没办法劫持。&lt;/p&gt;
-
-&lt;p&gt;&lt;a href=&#34;http://blog.csdn.net/hursing/article/details/8771847&#34;&gt;UIWebView的体系结构&lt;/a&gt;  这篇文章对UIWebView的分析很详尽，虽然不能直接得到解决方案，但是之后的研究得益于阅读这篇文章。
-经过我们对各家APP的测试，发现可以后退而不刷新页面的浏览器有：UCWeb、 QQ浏览器、百度浏览器、 搜狗浏览器；后退会reload的浏览器：Chrome、Opera、猎豹、海豚、极速浏览器、傲云浏览器、手机百度。&lt;/p&gt;
-
-&lt;p&gt;我们走了一些弯路，由于之前研究过UC在播放视频，是用JS劫持video对象和load、play调用，然后传递video url到OC Native，再通过弹出Native的VideoView来播放视频，对于某些只有广告链接或者收费视频或者APP专享的视频，怀疑UC是有一套后端视频URL的聚合系统，可能通过ref url在后端查询真实的视频url来播放。有这个先入为主的惯性思维，一度我们怀疑UC也是用JS解决前进后退不刷新的问题。为了验证这个想法，我们用&lt;a href=&#34;http://blog.jobbole.com/58856/&#34;&gt;MobileSubstrate&lt;/a&gt;注入动态库到UC的进程空间里， &lt;a href=&#34;http://blog.csdn.net/yiyaaixuexi/article/details/9374411&#34;&gt;Method Swizzling&lt;/a&gt;方法替换UIWebView的stringByEvaluatingJavaScriptFromString函数并直接返回，失效UCWeb对UIWebView所有额外的插入的js脚本，发现UCWeb的前进后退还是能够保持原有的dom元素。&lt;/p&gt;
-
-&lt;p&gt;再一条弯路是怀疑使用NSURLCache和NSURLProtocol做了缓存的影响，用同样的方法Hook initWithMemoryCapacity函数强制设置cache大小为0，同时在Hook UIWebView的loadRequest、goBack、goForward都去removeAllCachedResponses，对返回也是没有影响; 同样通过Hook registerClass和setProperty 函数，全部让其失效，验证也不是通过NSURLProtocol作用。&lt;/p&gt;
-
-&lt;p&gt;之所以走这样的弯路其实也是侥幸心理，不愿意花时间和精力去了解WebKit原理和分析WebKit代码。经常我们会由于各方面的压力，希望能够解决某个问题，而又不用花费太多的资源和时间，往往会走上错误的方向。最终我们还是乖乖的去读WebKit代码中关于UIWebView的那一部分。&lt;/p&gt;
-
-&lt;p&gt;UIWebView包含了WebBrowserView，WebBrowserView中还包含了一个无比重要的WebView对象，WebView暴露了很多有用的接口，一个很重要的对象WebBackForwardList；WebBackForwardList实际上是BackForwardList类的跨平台Wrapper类，BackForwardList就是装有HistoryItem的前进后退队列，同样WebHistoryItem也是HistoryItem的Wrapper类， 而实现浏览器前进后退不刷新的就是PageCache对象，PageCache是个单例，当点击一条链接跳转时，当前页面会被加入到gloablePageCache当中，返回时就直接从pageCache中拿出来显示。
-&lt;div align=left style=&#34;padding-top: 6px; padding-bottom: 6px&#34;&gt;
-    &lt;img src=&#34;https://wadahana.github.io/images/ios-uiwebview-pagecache/figure1.png&#34; width=&#34;100%&#34; alt=&#34;figure 1&#34;/&gt;
-&lt;/div&gt;
-WebBackForwardList有pageCacheSize和setPageCacheSize函数，读出UCWeb和我们自己程序的pageCacheSize对比，UC是5，我们的是0，说明了UC开启了pageCache，而我们没有。然而在程序中直接用setPageCacheSize, 再读出来依然还是0，同时劫持UC的setPageCacheSize函数，发现UC根本没有调用[WebBackForwardList setPageCacheSize]。
-&lt;div align=left style=&#34;padding-top: 6px; padding-bottom: 6px&#34;&gt;
-    &lt;img src=&#34;https://wadahana.github.io/images/ios-uiwebview-pagecache/figure2.png&#34; width=&#34;120%&#34; height=&#34;120%&#34; alt=&#34;figure 2&#34;/&gt;
-&lt;/div&gt;
-回到WebView类中，PageCache有一个setMaxSize方法，在WebView的_setCacheModel中被调用，_setCacheModel会根据0-2三种不同的cache模式和实际内存的大小设置各种缓存的大小，其中也包含了PageCache，实测证明在iPhone6 iOS8和iPhone5s iOS9.1上，cacheModel = WebCacheModelPrimaryWebBrowser时，可将pageCacheSize改为3。
-&lt;div align=left style=&#34;padding-top: 16px; padding-bottom: 16px&#34;&gt;
-    &lt;img src=&#34;https://wadahana.github.io/images/ios-uiwebview-pagecache/figure3.png&#34; width=&#34;100%&#34; alt=&#34;figure 3&#34;/&gt;
-&lt;/div&gt;
-最后放上Demo  ： &lt;a href=&#34;https://github.com/wadahana/WebViewDemo&#34;&gt;https://github.com/wadahana/WebViewDemo&lt;/a&gt;&lt;/p&gt;
-</description>
+      <description>UIWebView很弱，前进后退的时候会reload页面，比如浏览&amp;rdquo;今日头条&amp;rdquo;, &amp;ldquo;taobao&amp;rdquo; 或者 &amp;ldquo;新浪微博&amp;rdquo; ，从某个条目的detail页面返回列表时会重新刷新并回到列表页面的头部。
+iOS8之后放出的WKWebView性能体验各方面都不错，也没有这些reload的问题。不过WK的网络请求不能通过NSURLProtocol拦截，WK的网络请求是跨进程，而我们需要劫持流量进行计费，WK注定用不了。研究了下UCWeb，用的也是UIWebView。 最近的研究发现WK的渲染在WebContent进程中，网络请求在WebNetworking进程中；每开一个WKWebView，系统中就会多一个WebContent进程。 WebNetworking进程中网络流量也是可以被NSURLProtocol劫持到，需要通过私有API设置，但是音视频确实是由mediaserverd发出的，没办法劫持。
+UIWebView的体系结构 这篇文章对UIWebView的分析很详尽，虽然不能直接得到解决方案，但是之后的研究得益于阅读这篇文章。 经过我们对各家APP的测试，发现可以后退而不刷新页面的浏览器有：UCWeb、 QQ浏览器、百度浏览器、 搜狗浏览器；后退会reload的浏览器：Chrome、Opera、猎豹、海豚、极速浏览器、傲云浏览器、手机百度。
+我们走了一些弯路，由于之前研究过UC在播放视频，是用JS劫持video对象和load、play调用，然后传递video url到OC Native，再通过弹出Native的VideoView来播放视频，对于某些只有广告链接或者收费视频或者APP专享的视频，怀疑UC是有一套后端视频URL的聚合系统，可能通过ref url在后端查询真实的视频url来播放。有这个先入为主的惯性思维，一度我们怀疑UC也是用JS解决前进后退不刷新的问题。为了验证这个想法，我们用MobileSubstrate注入动态库到UC的进程空间里， Method Swizzling方法替换UIWebView的stringByEvaluatingJavaScriptFromString函数并直接返回，失效UCWeb对UIWebView所有额外的插入的js脚本，发现UCWeb的前进后退还是能够保持原有的dom元素。
+再一条弯路是怀疑使用NSURLCache和NSURLProtocol做了缓存的影响，用同样的方法Hook initWithMemoryCapacity函数强制设置cache大小为0，同时在Hook UIWebView的loadRequest、goBack、goForward都去removeAllCachedResponses，对返回也是没有影响; 同样通过Hook registerClass和setProperty 函数，全部让其失效，验证也不是通过NSURLProtocol作用。
+之所以走这样的弯路其实也是侥幸心理，不愿意花时间和精力去了解WebKit原理和分析WebKit代码。经常我们会由于各方面的压力，希望能够解决某个问题，而又不用花费太多的资源和时间，往往会走上错误的方向。最终我们还是乖乖的去读WebKit代码中关于UIWebView的那一部分。
+UIWebView包含了WebBrowserView，WebBrowserView中还包含了一个无比重要的WebView对象，WebView暴露了很多有用的接口，一个很重要的对象WebBackForwardList；WebBackForwardList实际上是BackForwardList类的跨平台Wrapper类，BackForwardList就是装有HistoryItem的前进后退队列，同样WebHistoryItem也是HistoryItem的Wrapper类， 而实现浏览器前进后退不刷新的就是PageCache对象，PageCache是个单例，当点击一条链接跳转时，当前页面会被加入到gloablePageCache当中，返回时就直接从pageCache中拿出来显示。  WebBackForwardList有pageCacheSize和setPageCacheSize函数，读出UCWeb和我们自己程序的pageCacheSize对比，UC是5，我们的是0，说明了UC开启了pageCache，而我们没有。然而在程序中直接用setPageCacheSize, 再读出来依然还是0，同时劫持UC的setPageCacheSize函数，发现UC根本没有调用[WebBackForwardList setPageCacheSize]。  回到WebView类中，PageCache有一个setMaxSize方法，在WebView的_setCacheModel中被调用，_setCacheModel会根据0-2三种不同的cache模式和实际内存的大小设置各种缓存的大小，其中也包含了PageCache，实测证明在iPhone6 iOS8和iPhone5s iOS9.1上，cacheModel = WebCacheModelPrimaryWebBrowser时，可将pageCacheSize改为3。  最后放上Demo ： https://github.com/wadahana/WebViewDemo</description>
     </item>
     
     <item>
@@ -250,86 +55,15 @@ WebBackForwardList有pageCacheSize和setPageCacheSize函数，读出UCWeb和我�
       <pubDate>Sat, 24 Dec 2016 09:39:25 +0800</pubDate>
       
       <guid>https://wadahana.github.io/2016/12/24/android-elf-hook/</guid>
-      <description>
-
-&lt;p&gt;首先写一段C代码，用arm-Linux-androideabi-gcc 编译成可执行文件:&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-C&#34;&gt;#include &amp;lt;stdio.h&amp;gt;
-#include &amp;lt;string.h&amp;gt;
-
-typedef int (*fn_strlen)(const char *);
-fn_strlen g_strlen = (fn_strlen)strlen;
-int main(const int argc, const char * args[])
-{
-    const char * helloworld = &amp;quot;hello world!&amp;quot;;
-    int a = g_strlen(helloworld);
-    int b = strlen(helloworld);
-    return 0;
-}
-
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;用arm-linux-androideabi-objdump -D 反汇编出所有的段，然后分析我们感兴趣的几个段:&lt;/p&gt;
-
-&lt;blockquote&gt;
-&lt;p&gt;.text 的&amp;lt;main&amp;gt;&lt;br /&gt;
-.plt 的 &amp;lt;strlen@plt&amp;gt;&lt;br /&gt;
-.got&lt;br /&gt;
-.rodata&lt;br /&gt;
-.data&lt;/p&gt;
-&lt;/blockquote&gt;
-
-&lt;div align=center&gt;
-    &lt;img src=&#34;https://wadahana.github.io/images/android-elf-hook/figure1.png&#34; width=&#34;80%&#34; alt=&#34;figure 1&#34;/&gt;
-    &lt;img src=&#34;https://wadahana.github.io/images/android-elf-hook/figure2.png&#34; width=&#34;80%&#34; alt=&#34;figure 2&#34;/&gt;
-&lt;/div&gt;
-
-&lt;h2 id=&#34;1-strlen的函数重定位&#34;&gt;1. strlen的函数重定位：&lt;/h2&gt;
-
-&lt;p&gt;&amp;lt;main&amp;gt; 函数反汇编的地址 0x384 中，指令 bl 294 对应了C代码中的strlen(helloworld);&lt;br /&gt;
-bl 294 的机器码是 eb ff ff ff c2, 其中 高8位 eb 是条件跳转指令，低24位是相对于当前PC的偏移地址offset&lt;br /&gt;
-offset = (目的地址 - 当前PC) &amp;gt;&amp;gt; 2, 而 PC 等于当前指令的地址 + 8  所以&lt;br /&gt;
-offset = (0x294 - (0x384+0x8)) &amp;gt;&amp;gt; 2 = (-0xF8 &amp;gt;&amp;gt; 2) = -(0x3E)
--(0x3E) 取24位补码等于 0xFFFFC2&lt;/p&gt;
-
-&lt;p&gt;在&amp;lt;strlen@plt&amp;gt;:地址0x294的位置是三条汇编指令，等价于&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;ip = pc + 0 
-ip = ip + 0x1000
-pc = [ip + 0xd60]
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;也就是将 (0x294 + 0x8) + 0x1000 + 0xd60 = 0x1FFC 指向的内存区的值取出来 赋给PC&lt;/p&gt;
-
-&lt;p&gt;地址0x1FFC, 是在&amp;lt;_GLOABLE_OFFSET_TABLE&amp;gt;中的表项，内容是0x268, &amp;lt;__libc_init@plt-0x14&amp;gt;的地址，初始化成0x268这个直，应该就是为了动态链接函数地址时作lazy load用的。&lt;/p&gt;
-
-&lt;p&gt;再来看在图三rel.plt表中offset为0x1FFC的项也说明了strlen函数对应的offset地址。&lt;/p&gt;
-
-&lt;div align=center&gt;
-    &lt;img src=&#34;https://wadahana.github.io/images/android-elf-hook/figure3.png&#34; width=&#34;80%&#34; alt=&#34;figure 3&#34;/&gt;
-&lt;/div&gt;
-
-&lt;h2 id=&#34;2-g-strlen全局函数变量的重定位&#34;&gt;2. g_strlen全局函数变量的重定位：&lt;/h2&gt;
-
-&lt;p&gt;对应的汇编代码在  &lt;main&gt;:0x368-0x378， 写成伪代码如下：&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;    0x368: r3 = [0x3a0] = 0x1c8c
-    0x36c: r3 = pc + 0x1c8c =  0x36c + 0x08+ 0x1c8c = 0x2000
-    0x370: r3 = [r3] = [0x2000]
-    0x378: call r3 
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;图三.rel.dyn 表中 offset = 0x2000 对应的sym name 为g_strlen.
-图二中最后一行也可以看到对应0x2000 的值是0， 当linker链接后会置为符号strlen的实际地址.&lt;/p&gt;
-
-&lt;h2 id=&#34;3-rel-dyn-与-rel-plt-的区别&#34;&gt;3. .rel.dyn 与 .rel.plt 的区别&lt;/h2&gt;
-
-&lt;p&gt;.rel.dyn和.rel.plt是REL/RELA，它们是Elf32_Rel类型或者Elf64_Rela的结构体数据&lt;br /&gt;
-.rel.dyn节的每个表项对应了除了外部过程调用的符号以外的所有重定位对象，
-.rel.plt节的每个表项对应了所有外部过程调用符号的重定位信息。&lt;/p&gt;
-
-&lt;p&gt;&lt;strong&gt;elf hook 的原理实际上就是通过.rel.dyn节和.rel.plt节的rel/rela项，找到符号对应的地址，例如本文中0x1ffc和0x2000, 并将其替换。&lt;/strong&gt;&lt;/p&gt;
-</description>
+      <description>首先写一段C代码，用arm-Linux-androideabi-gcc 编译成可执行文件:
+#include &amp;lt;stdio.h&amp;gt; #include &amp;lt;string.h&amp;gt; typedef int (*fn_strlen)(const char *); fn_strlen g_strlen = (fn_strlen)strlen; int main(const int argc, const char * args[]) { const char * helloworld = &amp;quot;hello world!&amp;quot;; int a = g_strlen(helloworld); int b = strlen(helloworld); return 0; }  用arm-linux-androideabi-objdump -D 反汇编出所有的段，然后分析我们感兴趣的几个段:
+ .text 的&amp;lt;main&amp;gt;
+.plt 的 &amp;lt;strlen@plt&amp;gt;
+.got
+.rodata
+.data
+  1. strlen的函数重定位： &amp;lt;main&amp;gt; 函数反汇编的地址 0x384 中，指令 bl 294 对应了C代码中的strlen(helloworld);
+bl 294 的机器码是 eb ff ff ff c2, 其中 高8位 eb 是条件跳转指令，低24位是相对于当前PC的偏移地址offset</description>
     </item>
     
   </channel>

@@ -2,141 +2,24 @@
 <rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
   <channel>
     <title>Elf on wadahana&#39;s new blog</title>
-    <link>https://wadahana.github.io/tags/elf/index.xml</link>
+    <link>https://wadahana.github.io/tags/elf/</link>
     <description>Recent content in Elf on wadahana&#39;s new blog</description>
     <generator>Hugo -- gohugo.io</generator>
     <language>en-us</language>
-    <atom:link href="https://wadahana.github.io/tags/elf/index.xml" rel="self" type="application/rss+xml" />
+    <lastBuildDate>Tue, 19 Sep 2017 13:59:52 +0800</lastBuildDate>
+    
+	<atom:link href="https://wadahana.github.io/tags/elf/index.xml" rel="self" type="application/rss+xml" />
+    
     
     <item>
-      <title>bionic研究笔记1</title>
-      <link>https://wadahana.github.io/2017/09/19/bionic%E7%A0%94%E7%A9%B6%E7%AC%94%E8%AE%B01/</link>
+      <title>bionic linker代码结构分析</title>
+      <link>https://wadahana.github.io/2017/09/19/bionic-linker%E4%BB%A3%E7%A0%81%E7%BB%93%E6%9E%84%E5%88%86%E6%9E%90/</link>
       <pubDate>Tue, 19 Sep 2017 13:59:52 +0800</pubDate>
       
-      <guid>https://wadahana.github.io/2017/09/19/bionic%E7%A0%94%E7%A9%B6%E7%AC%94%E8%AE%B01/</guid>
-      <description>&lt;p&gt;研究bionic是去年做symbol hook的时候，粗略看了下linker链接动态库时是如何加载符号表，&lt;/p&gt;
-
-&lt;p&gt;linker从arch/arm/begin.S开始执行，将当前栈顶指针sp作为参数调用__linker_init(void* raw_args)。__linker_init函数负责linker的初始化和重定位工作；在Android 7中的linker_addr是直接从ELF辅助向量中读取AT_BASE。而Android 8则是利用了一个小技巧来计算linker_addr，在__linker_init执行的时侯，是尚未进行重定位的，所以静态变量linktime_addr中的值是其在文件中的偏移量，而代码中对linktime_addr变量的取址操作得到的却是该变量在内存中的地址，两者的差值便是linker加载到内存中的基址。&lt;/p&gt;
-
-&lt;p&gt;Android 7 的__linker_init:&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;extern &amp;quot;C&amp;quot; Elf32_Addr __linker_init(void* raw_args) {
-  KernelArgumentBlock args(raw_args);
-
-  Elf32_Addr linker_addr = args.getauxval(AT_BASE);
-
-  Elf32_Ehdr* elf_hdr = (Elf32_Ehdr*) linker_addr;
-  Elf32_Phdr* phdr = (Elf32_Phdr*)((unsigned char*) linker_addr + elf_hdr-&amp;gt;e_phoff);
-
-  soinfo linker_so(nullptr, nullptr, nullptr, 0, 0);
-  
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;Android 8的__linker_init:&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;extern &amp;quot;C&amp;quot; ElfW(Addr) __linker_init(void* raw_args) {
-  KernelArgumentBlock args(raw_args);
-
-  static uintptr_t linktime_addr = reinterpret_cast&amp;lt;uintptr_t&amp;gt;(&amp;amp;linktime_addr);
-  ElfW(Addr) linker_addr = reinterpret_cast&amp;lt;uintptr_t&amp;gt;(&amp;amp;linktime_addr) - linktime_addr;
-  ElfW(Addr) entry_point = args.getauxval(AT_ENTRY);
-  ElfW(Ehdr)* elf_hdr = reinterpret_cast&amp;lt;ElfW(Ehdr)*&amp;gt;(linker_addr);
-  ElfW(Phdr)* phdr = reinterpret_cast&amp;lt;ElfW(Phdr)*&amp;gt;(linker_addr + elf_hdr-&amp;gt;e_phoff);
-  
-  soinfo linker_so(nullptr, nullptr, nullptr, 0, 0);
-
-  linker_so.base = linker_addr;
-  linker_so.size = phdr_table_get_load_size(phdr, elf_hdr-&amp;gt;e_phnum);
-  linker_so.load_bias = get_elf_exec_load_bias(elf_hdr);
-  linker_so.dynamic = nullptr;
-  linker_so.phdr = phdr;
-  linker_so.phnum = elf_hdr-&amp;gt;e_phnum;
-  linker_so.set_linker_flag();
-
-  if (!linker_so.prelink_image())
-      __linker_cannot_link(args.argv[0]);
-
-  if (!linker_so.link_image(g_empty_list, g_empty_list, nullptr))
-      __linker_cannot_link(args.argv[0]);
-
-#if defined(__i386__)
-  __libc_init_sysinfo(args);
-#endif
-
-  __libc_init_main_thread(args);
-
-  if (!linker_so.protect_relro()) 
-  	  __linker_cannot_link(args.argv[0]);
-
-  __libc_init_globals(args);
-
-  g_argc = args.argc;
-  g_argv = args.argv;
-  g_envp = args.envp;
-  
-  linker_so.call_constructors();
-  
-  if (reinterpret_cast&amp;lt;ElfW(Addr)&amp;gt;(&amp;amp;_start) == entry_point) {
-      async_safe_format_fd(STDOUT_FILENO,
-                     &amp;quot;This is %s, the helper program for dynamic executables.\n&amp;quot;,
-                     args.argv[0]);
-      exit(0);
-  }
-
-  init_linker_info_for_gdb(linker_addr, kLinkerPath);
-  
-  sonext = solist = get_libdl_info(kLinkerPath, linker_so, linker_link_map);
-  g_default_namespace.add_soinfo(solist);
-
-  args.abort_message_ptr = &amp;amp;g_abort_message;
-  ElfW(Addr) start_address = __linker_init_post_relocation(args);
-
-  INFO(&amp;quot;[ Jumping to _start (%p)... ]&amp;quot;, reinterpret_cast&amp;lt;void*&amp;gt;(start_address));
-
-  return start_address;
-  
-    
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;之后创建一个soinfo，填充linker的相关信息，然后先后调用soinfo的prelink_image函数和link_image函数，解析linker的dynamic section，然完成符号表的重定位。&lt;/p&gt;
-
-&lt;p&gt;phdr_table_get_load_size，计算整个linker image的大小，根据program header中PT_LOAD段的最大和最小的地址之差。&lt;/p&gt;
-
-&lt;p&gt;get_elf_exec_load_bias，
-linker启动时的栈底数据结构，填充了命令行参数、环境变量和ELF辅助向量&lt;/p&gt;
-
-&lt;p&gt;__linker_init_post_relocation&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;
-position            content                     size (bytes)  comment
-  ------------------------------------------------------------------------
-stack pointer -&amp;gt;  [ argc = number of args ]     4      
-                  [ argv[0] (pointer) ]         4      
-                  [ argv[1] (pointer) ]         4      
-                  [ argv[..] (pointer) ]        4 * n  
-                  [ argv[n - 1] (pointer) ]     4      
-                  [ argv[n] (pointer) ]         4       	= NULL
-
-                  [ envp[0] (pointer) ]         4     
-                  [ envp[1] (pointer) ]         4      
-                  [ envp[..] (pointer) ]        4      
-                  [ envp[term] (pointer) ]      4           = NULL
-
-                  [ auxv[0] (Elf32_auxv_t) ]    8      
-                  [ auxv[1] (Elf32_auxv_t) ]    8
-                  [ auxv[..] (Elf32_auxv_t) ]   8 
-                  [ auxv[term] (Elf32_auxv_t) ] 8           = AT_NULL vector
-
-                  [ padding ]                   0 - 16     
-
-                  [ argument ASCIIZ strings ]   &amp;gt;= 0   
-                  [ environment ASCIIZ str. ]   &amp;gt;= 0   
-
-(0xbffffffc)      [ end marker ]                4          = NULL 结束
-
-(0xc0000000)       &amp;lt; bottom of stack &amp;gt;          0          (virtual)
-&lt;/code&gt;&lt;/pre&gt;
-</description>
+      <guid>https://wadahana.github.io/2017/09/19/bionic-linker%E4%BB%A3%E7%A0%81%E7%BB%93%E6%9E%84%E5%88%86%E6%9E%90/</guid>
+      <description>研究bionic是两年前做symbol hook，读了linker加载可执行文件和动态库链接的流程；去年底Android 7发布之后，为了解决dlopen系统目录下动态库的限制，研究了greylist的检查机制。
+下图的calltree以arm架构的启动为例，linker从arch/arm/begin.S开始执行，启动后调用__linker_init函数进行自举，__linker_init只有一个参数，当前栈顶指针sp。在_start之前，linker以及可执行文件，就已经加载到内存当中。
+_start .|-&amp;gt; mov r0, sp .|-&amp;gt; __linker_init . .|-&amp;gt; 初始化KernelArgumentBlock . .|-&amp;gt; 计算linker_addr . .|-&amp;gt; 初始化linker_so . .|-&amp;gt; linker_so.size = phdr_table_get_load_size() . .|-&amp;gt; linker_so.load_bias = get_elf_exec_load_bias() . .|-&amp;gt; soinfo::set_linker_flag() . .|-&amp;gt; soinfo::prelink_image() . .|-&amp;gt; soinfo::link_image() . .|-&amp;gt; __libc_init_main_thread() . .|-&amp;gt; soinfo::protect_relro() . . .|-&amp;gt; phdr_table_protect_gnu_relro() . . . .|-&amp;gt; _phdr_table_set_gnu_relro_prot() . .|-&amp;gt; __libc_init_globals() . .|-&amp;gt; soinfo::call_constructors() . . .|-&amp;gt; get_children().for_each(soinfo &amp;amp;so){so.call_constructors()} . . .|-&amp;gt; call_function(&amp;quot;DT_INIT&amp;quot;, init_func_, get_realpath()); .</description>
     </item>
     
     <item>
@@ -145,86 +28,15 @@ stack pointer -&amp;gt;  [ argc = number of args ]     4
       <pubDate>Sat, 24 Dec 2016 09:39:25 +0800</pubDate>
       
       <guid>https://wadahana.github.io/2016/12/24/android-elf-hook/</guid>
-      <description>
-
-&lt;p&gt;首先写一段C代码，用arm-Linux-androideabi-gcc 编译成可执行文件:&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-C&#34;&gt;#include &amp;lt;stdio.h&amp;gt;
-#include &amp;lt;string.h&amp;gt;
-
-typedef int (*fn_strlen)(const char *);
-fn_strlen g_strlen = (fn_strlen)strlen;
-int main(const int argc, const char * args[])
-{
-    const char * helloworld = &amp;quot;hello world!&amp;quot;;
-    int a = g_strlen(helloworld);
-    int b = strlen(helloworld);
-    return 0;
-}
-
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;用arm-linux-androideabi-objdump -D 反汇编出所有的段，然后分析我们感兴趣的几个段:&lt;/p&gt;
-
-&lt;blockquote&gt;
-&lt;p&gt;.text 的&amp;lt;main&amp;gt;&lt;br /&gt;
-.plt 的 &amp;lt;strlen@plt&amp;gt;&lt;br /&gt;
-.got&lt;br /&gt;
-.rodata&lt;br /&gt;
-.data&lt;/p&gt;
-&lt;/blockquote&gt;
-
-&lt;div align=center&gt;
-    &lt;img src=&#34;https://wadahana.github.io/images/android-elf-hook/figure1.png&#34; width=&#34;80%&#34; alt=&#34;figure 1&#34;/&gt;
-    &lt;img src=&#34;https://wadahana.github.io/images/android-elf-hook/figure2.png&#34; width=&#34;80%&#34; alt=&#34;figure 2&#34;/&gt;
-&lt;/div&gt;
-
-&lt;h2 id=&#34;1-strlen的函数重定位&#34;&gt;1. strlen的函数重定位：&lt;/h2&gt;
-
-&lt;p&gt;&amp;lt;main&amp;gt; 函数反汇编的地址 0x384 中，指令 bl 294 对应了C代码中的strlen(helloworld);&lt;br /&gt;
-bl 294 的机器码是 eb ff ff ff c2, 其中 高8位 eb 是条件跳转指令，低24位是相对于当前PC的偏移地址offset&lt;br /&gt;
-offset = (目的地址 - 当前PC) &amp;gt;&amp;gt; 2, 而 PC 等于当前指令的地址 + 8  所以&lt;br /&gt;
-offset = (0x294 - (0x384+0x8)) &amp;gt;&amp;gt; 2 = (-0xF8 &amp;gt;&amp;gt; 2) = -(0x3E)
--(0x3E) 取24位补码等于 0xFFFFC2&lt;/p&gt;
-
-&lt;p&gt;在&amp;lt;strlen@plt&amp;gt;:地址0x294的位置是三条汇编指令，等价于&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;ip = pc + 0 
-ip = ip + 0x1000
-pc = [ip + 0xd60]
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;也就是将 (0x294 + 0x8) + 0x1000 + 0xd60 = 0x1FFC 指向的内存区的值取出来 赋给PC&lt;/p&gt;
-
-&lt;p&gt;地址0x1FFC, 是在&amp;lt;_GLOABLE_OFFSET_TABLE&amp;gt;中的表项，内容是0x268, &amp;lt;__libc_init@plt-0x14&amp;gt;的地址，初始化成0x268这个直，应该就是为了动态链接函数地址时作lazy load用的。&lt;/p&gt;
-
-&lt;p&gt;再来看在图三rel.plt表中offset为0x1FFC的项也说明了strlen函数对应的offset地址。&lt;/p&gt;
-
-&lt;div align=center&gt;
-    &lt;img src=&#34;https://wadahana.github.io/images/android-elf-hook/figure3.png&#34; width=&#34;80%&#34; alt=&#34;figure 3&#34;/&gt;
-&lt;/div&gt;
-
-&lt;h2 id=&#34;2-g-strlen全局函数变量的重定位&#34;&gt;2. g_strlen全局函数变量的重定位：&lt;/h2&gt;
-
-&lt;p&gt;对应的汇编代码在  &lt;main&gt;:0x368-0x378， 写成伪代码如下：&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;    0x368: r3 = [0x3a0] = 0x1c8c
-    0x36c: r3 = pc + 0x1c8c =  0x36c + 0x08+ 0x1c8c = 0x2000
-    0x370: r3 = [r3] = [0x2000]
-    0x378: call r3 
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;图三.rel.dyn 表中 offset = 0x2000 对应的sym name 为g_strlen.
-图二中最后一行也可以看到对应0x2000 的值是0， 当linker链接后会置为符号strlen的实际地址.&lt;/p&gt;
-
-&lt;h2 id=&#34;3-rel-dyn-与-rel-plt-的区别&#34;&gt;3. .rel.dyn 与 .rel.plt 的区别&lt;/h2&gt;
-
-&lt;p&gt;.rel.dyn和.rel.plt是REL/RELA，它们是Elf32_Rel类型或者Elf64_Rela的结构体数据&lt;br /&gt;
-.rel.dyn节的每个表项对应了除了外部过程调用的符号以外的所有重定位对象，
-.rel.plt节的每个表项对应了所有外部过程调用符号的重定位信息。&lt;/p&gt;
-
-&lt;p&gt;&lt;strong&gt;elf hook 的原理实际上就是通过.rel.dyn节和.rel.plt节的rel/rela项，找到符号对应的地址，例如本文中0x1ffc和0x2000, 并将其替换。&lt;/strong&gt;&lt;/p&gt;
-</description>
+      <description>首先写一段C代码，用arm-Linux-androideabi-gcc 编译成可执行文件:
+#include &amp;lt;stdio.h&amp;gt; #include &amp;lt;string.h&amp;gt; typedef int (*fn_strlen)(const char *); fn_strlen g_strlen = (fn_strlen)strlen; int main(const int argc, const char * args[]) { const char * helloworld = &amp;quot;hello world!&amp;quot;; int a = g_strlen(helloworld); int b = strlen(helloworld); return 0; }  用arm-linux-androideabi-objdump -D 反汇编出所有的段，然后分析我们感兴趣的几个段:
+ .text 的&amp;lt;main&amp;gt;
+.plt 的 &amp;lt;strlen@plt&amp;gt;
+.got
+.rodata
+.data
+  1. strlen的函数重定位： &amp;lt;main&amp;gt; 函数反汇编的地址 0x384 中，指令 bl 294 对应了C代码中的strlen(helloworld);
+bl 294 的机器码是 eb ff ff ff c2, 其中 高8位 eb 是条件跳转指令，低24位是相对于当前PC的偏移地址offset</description>
     </item>
     
   </channel>

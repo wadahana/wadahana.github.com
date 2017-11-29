@@ -2,11 +2,14 @@
 <rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
   <channel>
     <title>启动时间 on wadahana&#39;s new blog</title>
-    <link>https://wadahana.github.io/tags/%E5%90%AF%E5%8A%A8%E6%97%B6%E9%97%B4/index.xml</link>
+    <link>https://wadahana.github.io/tags/%E5%90%AF%E5%8A%A8%E6%97%B6%E9%97%B4/</link>
     <description>Recent content in 启动时间 on wadahana&#39;s new blog</description>
     <generator>Hugo -- gohugo.io</generator>
     <language>en-us</language>
-    <atom:link href="https://wadahana.github.io/tags/%E5%90%AF%E5%8A%A8%E6%97%B6%E9%97%B4/index.xml" rel="self" type="application/rss+xml" />
+    <lastBuildDate>Mon, 09 Jan 2017 00:30:36 +0800</lastBuildDate>
+    
+	<atom:link href="https://wadahana.github.io/tags/%E5%90%AF%E5%8A%A8%E6%97%B6%E9%97%B4/index.xml" rel="self" type="application/rss+xml" />
+    
     
     <item>
       <title>How to get iOS&#39;s start time</title>
@@ -14,67 +17,10 @@
       <pubDate>Mon, 09 Jan 2017 00:30:36 +0800</pubDate>
       
       <guid>https://wadahana.github.io/2017/01/09/how-to-get-ioss-start-time/</guid>
-      <description>&lt;p&gt;做一个iOS上的流量监控App，原本通过sysctl读取进程列表，取得kernel_task进程的启动时间作为系统启动时间，如果系统重启就需要把网卡记录的流量全部累加，否则用本次读取的网卡流量数据减去上一次记录的数据认为是这段时间内用户产生的流量。&lt;/p&gt;
-
-&lt;p&gt;在iOS9上 sysctl被封了，这段代码就挂了。没办法拿到系统启动时间，就会不停的累加网卡记录的全部流量。&lt;/p&gt;
-
-&lt;p&gt;&lt;strong&gt;使用sysctl取得kernel_task启动时间&lt;/strong&gt;&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;
-+ (NSDate *)systemStartTime
-{
-    size_t length = 0;
-    static const int name[] = {CTL_KERN, KERN_PROC, KERN_PROC_ALL, 0};
-    int err = sysctl( (int *) name, (sizeof(name) / sizeof(*name)) - 1, NULL, &amp;amp;length, NULL, 0);
-    if (err == -1)
-    {
-        err = errno;
-    }
-    if (err == 0)
-    {
-        struct kinfo_proc *procBuffer = (struct kinfo_proc *)malloc(length);
-        if(procBuffer == NULL)
-        {
-            return nil;
-        }
-
-        sysctl( (int *) name, (sizeof(name) / sizeof(*name)) - 1, procBuffer, &amp;amp;length, NULL, 0);
-
-        int count = (int)length / sizeof(struct kinfo_proc);
-        for (int i = 0; i &amp;lt; count; ++i)
-        {
-            NSString *procName = [NSString stringWithCString:procBuffer[i].kp_proc.p_comm encoding:NSUTF8StringEncoding];
-            if ([procName isEqualToString:@&amp;quot;kernel_task&amp;quot;])
-            {
-                return [NSDate dateWithTimeIntervalSince1970:procBuffer[i].kp_proc.p_un.__p_starttime.tv_sec];
-            }
-        }
-    }
-
-    return nil;
-}
-
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;使用sysctlbyname取得boottime&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;+ (NSDate *)systemStartTime {
-    size_t size;
-    sysctlbyname(&amp;quot;kern.boottime&amp;quot;, NULL, &amp;amp;size, NULL, 0);
-    char *boot_time = malloc(size);
-    sysctlbyname(&amp;quot;kern.boottime&amp;quot;, boot_time, &amp;amp;size, NULL, 0);
-    uint32_t timestamp = 0;
-    memcpy(&amp;amp;timestamp, boot_time, sizeof(uint32_t));
-    free(boot_time);
-    NSDate* bootTime = [NSDate dateWithTimeIntervalSince1970:timestamp];
-    NSLog(@&amp;quot;BootTime: %@&amp;quot;, bootTime);
-    return  bootTime;
-}
-
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;这种方式读取boottime也是有问题的，就是用户手动设置系统时间后，bootime会变动成手动设置的那个时刻；另外mach_absolute_time读取出来的tick数和bootime是一致的，猜测boottime其实就是换算mach_absolute_time()的结果。&lt;/p&gt;
-</description>
+      <description>做一个iOS上的流量监控App，原本通过sysctl读取进程列表，取得kernel_task进程的启动时间作为系统启动时间，如果系统重启就需要把网卡记录的流量全部累加，否则用本次读取的网卡流量数据减去上一次记录的数据认为是这段时间内用户产生的流量。
+在iOS9上 sysctl被封了，这段代码就挂了。没办法拿到系统启动时间，就会不停的累加网卡记录的全部流量。
+使用sysctl取得kernel_task启动时间
+ + (NSDate *)systemStartTime { size_t length = 0; static const int name[] = {CTL_KERN, KERN_PROC, KERN_PROC_ALL, 0}; int err = sysctl( (int *) name, (sizeof(name) / sizeof(*name)) - 1, NULL, &amp;amp;length, NULL, 0); if (err == -1) { err = errno; } if (err == 0) { struct kinfo_proc *procBuffer = (struct kinfo_proc *)malloc(length); if(procBuffer == NULL) { return nil; } sysctl( (int *) name, (sizeof(name) / sizeof(*name)) - 1, procBuffer, &amp;amp;length, NULL, 0); int count = (int)length / sizeof(struct kinfo_proc); for (int i = 0; i &amp;lt; count; ++i) { NSString *procName = [NSString stringWithCString:procBuffer[i].</description>
     </item>
     
   </channel>
