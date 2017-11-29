@@ -63,7 +63,9 @@
     
 
     <div class="article-content">
-      <p>研究bionic是两年前做symbol hook，读了linker加载可执行文件和动态库链接的流程；去年底Android 7发布之后，为了解决dlopen系统目录下动态库的限制，研究了greylist的检查机制。</p>
+      
+
+<p>研究bionic是两年前做symbol hook时，分析了linker解析ELF文件的相关代码；去年底Android 7发布之后，为了解决dlopen系统目录下动态库的限制，研究了系统库访问权限的相关代码，彻底把linker自举和加载动态库的流程理清楚。以前也读过很多开源代码，像ffmpeg、xvidcore、wince文件系统还有各种RTOS的代码。做完项目改完bug，也就逐渐就忘记了；趁着最近比较清闲，把linker的笔记整理出来，说不定那天又需要再看！</p>
 
 <p>下图的calltree以arm架构的启动为例，linker从arch/arm/begin.S开始执行，启动后调用__linker_init函数进行自举，__linker_init只有一个参数，当前栈顶指针sp。在_start之前，linker以及可执行文件，就已经加载到内存当中。</p>
 
@@ -159,11 +161,15 @@ stack pointer -&gt;  [ argc = number of args ]     4
 
 <p>而Android 8则是用了个技巧来计算linker_addr。__linker_init执行的时侯，尚未进行重定位，所以定义静态变量linktime_addr的值还是编译器计算出来在文件中的偏移量，而第二行对linktime_addr变量的取址操作得到的却是该变量在内存中的地址，两者的差值便是linker加载到内存中的基址。</p>
 
-<pre><code>static uintptr_t linktime_addr = reinterpret_cast&lt;uintptr_t&gt;(&amp;linktime_addr);
+<pre><code>
+static uintptr_t linktime_addr = reinterpret_cast&lt;uintptr_t&gt;(&amp;linktime_addr);
+
 ElfW(Addr) linker_addr = reinterpret_cast&lt;uintptr_t&gt;(&amp;linktime_addr) - linktime_addr;
+
+
 </code></pre>
 
-<p>##3. 创建soinfo</p>
+<h2 id="3-创建soinfo">3. 创建soinfo</h2>
 
 <p>linker_addr是linker加载到内存里的base_addr，也就是指向linker elf_header的指针。</p>
 
@@ -186,7 +192,7 @@ linker_so.set_linker_flag();
 
 </code></pre>
 
-<p>##4.prelink_image()和link_image()</p>
+<h2 id="4-prelink-image-和link-image">4.prelink_image()和link_image()</h2>
 
 <p>soinfo::prelink_image()函数是在elf文件加载如内存后，分析.dynamic，解析出符号表，字符串表，重定位表等elf重要数据结构的地址和长度。</p>
 
@@ -194,17 +200,19 @@ linker_so.set_linker_flag();
 
 <p>这两个函数是elf文件加载的关键点，后面我会单独分析这两个函数</p>
 
-<p>##5.__libc_init_main_thread() 和 __libc_init_globals()</p>
+<h2 id="5-libc-init-main-thread-和-libc-init-globals">5.__libc_init_main_thread() 和 __libc_init_globals()</h2>
 
 <p>__libc_init_main_thread方法中创建一个main_thread； __libc_init_globals方法中为libc设置辅助向量、vsdo和setjmp等全局变量，这两个方法是libc的内容，本文不做深入分析。</p>
 
-<p>##6.soinfo::protect_relro()
-soinfo::protect_relro()最终会调用到_phdr_table_set_gnu_relro_prot()函数，将PT_GNU_RELRO段指向的内存地址通过mprotoct函数设置为PROT_READ。</p>
+<h2 id="6-soinfo-protect-relro">6.soinfo::protect_relro()</h2>
+
+<p>soinfo::protect_relro()最终会调用到_phdr_table_set_gnu_relro_prot()函数，将PT_GNU_RELRO段指向的内存地址通过mprotoct函数设置为PROT_READ。</p>
 
 <p>_phdr_table_set_gnu_relro_prot函数中将会对内存段的起始和结束地址取页对齐，如果PT_GNU_RELRO段指向的内存段不是页对齐，将会被(over-protective as read-only)</p>
 
-<p>##7.soinfo::call_constructors()
-call_constructors()函数递归了get_childred()中的soinfo，目的是执行DT_INIT段指向的函数和DT_INIT_ARRAY段包含的函数列表。</p>
+<h2 id="7-soinfo-call-constructors">7.soinfo::call_constructors()</h2>
+
+<p>call_constructors()函数递归了get_childred()中的soinfo，目的是执行DT_INIT段指向的函数和DT_INIT_ARRAY段包含的函数列表。</p>
 
 <p>DT_INIT段的函数来源未知，而DT_INIT_ARRAY段中的函数&rsquo;们&rsquo;是代码中通过__attribute__ ((constructor)) 声明的构造函数，以及由编译器自动插入的某些全局变量的构造函数。</p>
 
@@ -226,33 +234,33 @@ call_constructors()函数递归了get_childred()中的soinfo，目的是执行DT
 }
 </code></pre>
 
-<p>##8.get_libdl_info()
-get_libdl_info()函数也是一个需要关注的地方，我们在【3】中提到了linker_so是创建在栈上的，而get_libdl_info()相当于在堆上拷贝linker_so构造了一个新的soinfo，然后添加到solist和sonext链表中。</p>
+<h2 id="8-get-libdl-info">8.get_libdl_info()</h2>
+
+<p>get_libdl_info()函数也是一个需要关注的地方，我们在【3】中提到了linker_so是创建在栈上的，而get_libdl_info()相当于在堆上拷贝linker_so构造了一个新的soinfo，然后添加到solist和sonext链表中。</p>
 
 <p>android 7.1.2之前，/system/lib/libdl.so这个动态库并没有加载到内存中的，get_libdl_info()创建的soinfo，被命名为libdl.so, 所以dlopen, dlclose, dlsym, dladdr这几个函数实际上都是直接链接linker当中的符号。</p>
 
 <p>而在android7.1.2之后，get_libdl_info()创建的soinfo对象soname=&ldquo;ld-android.so&rdquo;，libdl.so在加载依赖库时被载入内存，dlxxxx函数由libdl.so导出。</p>
 
-<p>##9.__linker_init_post_relocation(args)
-__linker_init_post_relocation()是__linker_init()在返回之前最后调用的函数，这个函数里做了很多工作，包括创建可执行文件的soinfo对象，prelink_image, 对可执行文件的依赖库调用find_libraries加载等。除此之外，有几个点需要留意。</p>
+<h2 id="9-linker-init-post-relocation-args">9.__linker_init_post_relocation(args)</h2>
+
+<p>__linker_init_post_relocation()是__linker_init()在返回之前最后调用的函数，这个函数里做了很多工作，包括创建可执行文件的soinfo对象，prelink_image, 对可执行文件的依赖库调用find_libraries加载等。除此之外，有几个点需要留意。</p>
 
 <blockquote>
-<p>在LinkerLogger::ResetState() 会读取system_propertys中的&rsquo;debug.ld.greylist_disabled&rsquo;设置全局变量g_greylist_disabled；g_greylist_disabled = true的情况下，is_greylisted()返回false，系统库灰名单失效。</p>
+<p><strong>a.</strong> 在LinkerLogger::ResetState() 会读取system_propertys中的&rsquo;debug.ld.greylist_disabled&rsquo;设置全局变量g_greylist_disabled；g_greylist_disabled = true的情况下，is_greylisted()返回false，系统库灰名单失效。</p>
 
-<p>soinfo的phdr和phnum是通过辅助向量中AT_PHDR和AT_PHNUM读取。</p>
+<p><strong>b.</strong> soinfo的phdr和phnum是通过辅助向量中AT_PHDR和AT_PHNUM读取。</p>
 
-<p>somain链表的表头置为可行性文件的soinfo</p>
+<p><strong>c.</strong> somain链表的表头置为可行性文件的soinfo</p>
 
-<p>环境变量LD_LIBRARY_PATH中指定的路径，会被设置为g_default_namespace的ld_library_paths_, ld_library_paths_在后续的init_default_namespaces()中不会被修改。</p>
+<p><strong>d.</strong> 环境变量LD_LIBRARY_PATH中指定的路径，会被设置为g_default_namespace的ld_library_paths_, ld_library_paths_在后续的init_default_namespaces()中不会被修改。</p>
 
-<p>环境变量LD_PRELOAD中指定的库会被当作依赖库进行加载</p>
+<p><strong>e.</strong> 环境变量LD_PRELOAD中指定的库会被当作依赖库进行加载</p>
 
-<p>调用init_default_namespaces初始化g_default_namespace，这个步骤会读取LD_CONFIG_FILE指定的ld.config或者是默认的/system/etc/ld.config.txt，如果都不存在则使用init_default_namespace_no_config()配置g_default_namespace。</p>
+<p><strong>f.</strong> 调用init_default_namespaces初始化g_default_namespace，这个步骤会读取LD_CONFIG_FILE指定的ld.config或者是默认的/system/etc/ld.config.txt，如果都不存在则使用init_default_namespace_no_config()配置g_default_namespace。</p>
 
-<p>读取linker辅助向量中的AT_ENTRY，这个值是可执行文件的EntryPoint。</p>
+<p><strong>g.</strong> 读取linker辅助向量中的AT_ENTRY，这个值是可执行文件的EntryPoint。</p>
 </blockquote>
-
-<p>返回可执行文件的入口地址。</p>
 
     </div>
   </article>

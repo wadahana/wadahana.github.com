@@ -17,7 +17,7 @@
       <pubDate>Tue, 19 Sep 2017 13:59:52 +0800</pubDate>
       
       <guid>https://wadahana.github.io/2017/09/19/bionic-linker%E4%BB%A3%E7%A0%81%E7%BB%93%E6%9E%84%E5%88%86%E6%9E%90/</guid>
-      <description>研究bionic是两年前做symbol hook，读了linker加载可执行文件和动态库链接的流程；去年底Android 7发布之后，为了解决dlopen系统目录下动态库的限制，研究了greylist的检查机制。
+      <description>研究bionic是两年前做symbol hook时，分析了linker解析ELF文件的相关代码；去年底Android 7发布之后，为了解决dlopen系统目录下动态库的限制，研究了系统库访问权限的相关代码，彻底把linker自举和加载动态库的流程理清楚。以前也读过很多开源代码，像ffmpeg、xvidcore、wince文件系统还有各种RTOS的代码。做完项目改完bug，也就逐渐就忘记了；趁着最近比较清闲，把linker的笔记整理出来，说不定那天又需要再看！
 下图的calltree以arm架构的启动为例，linker从arch/arm/begin.S开始执行，启动后调用__linker_init函数进行自举，__linker_init只有一个参数，当前栈顶指针sp。在_start之前，linker以及可执行文件，就已经加载到内存当中。
 _start .|-&amp;gt; mov r0, sp .|-&amp;gt; __linker_init . .|-&amp;gt; 初始化KernelArgumentBlock . .|-&amp;gt; 计算linker_addr . .|-&amp;gt; 初始化linker_so . .|-&amp;gt; linker_so.size = phdr_table_get_load_size() . .|-&amp;gt; linker_so.load_bias = get_elf_exec_load_bias() . .|-&amp;gt; soinfo::set_linker_flag() . .|-&amp;gt; soinfo::prelink_image() . .|-&amp;gt; soinfo::link_image() . .|-&amp;gt; __libc_init_main_thread() . .|-&amp;gt; soinfo::protect_relro() . . .|-&amp;gt; phdr_table_protect_gnu_relro() . . . .|-&amp;gt; _phdr_table_set_gnu_relro_prot() . .|-&amp;gt; __libc_init_globals() . .|-&amp;gt; soinfo::call_constructors() . . .|-&amp;gt; get_children().for_each(soinfo &amp;amp;so){so.call_constructors()} . . .|-&amp;gt; call_function(&amp;quot;DT_INIT&amp;quot;, init_func_, get_realpath()); .</description>
     </item>
