@@ -196,7 +196,7 @@ linker_so.set_linker_flag();
 
 <p>soinfo::prelink_image()函数是在elf文件加载如内存后，分析.dynamic，解析出符号表，字符串表，重定位表等elf重要数据结构的地址和长度。</p>
 
-<p>soinfo::image()主要是在prelink后做重定位</p>
+<p>soinfo::linker_image()主要是在prelink后做重定位</p>
 
 <p>这两个函数是elf文件加载的关键点，后面我会单独分析这两个函数</p>
 
